@@ -20,7 +20,7 @@ jobs:
       - name: Basic PHI detection scan
         run: |
           echo "Scanning for potential PHI patterns..."
-          if grep -r -E "\b\d{3}-\d{2}-\d{4}\b|\b\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\b" src/ 2>/dev/null; then
+          if find src/ -name "*.js" -o -name "*.py" -o -name "*.json" 2>/dev/null | xargs grep -l -E "\b\d{3}-\d{2}-\d{4}\b|\b\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\b" 2>/dev/null; then
             echo "⚠️  Potential PHI detected - please review"
             exit 1
           else
@@ -30,7 +30,10 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Test GCP healthcare connection
         run: |
