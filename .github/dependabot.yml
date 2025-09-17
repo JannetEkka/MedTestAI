@@ -1,72 +1,12 @@
-# Dependabot configuration for MedTestAI healthcare AI project
-# Healthcare projects require frequent security updates due to PHI handling requirements
-
+# Simplified Dependabot configuration for MedTestAI
 version: 2
 updates:
-  # JavaScript/Node.js dependencies (frontend & API)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 10
-    reviewers:
-      - "JannetEkka"  # Replace with your username
-    labels:
-      - "dependencies"
-      - "security"
-    commit-message:
-      prefix: "deps"
-      prefix-development: "deps-dev"
-
-  # Python dependencies (ML/AI components)
-  - package-ecosystem: "pip"
-    directory: "/src/ml"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 5
-    reviewers:
-      - "JannetEkka"
-    labels:
-      - "dependencies"
-      - "ml"
-      - "security"
-
-  # Docker dependencies
-  - package-ecosystem: "docker"
-    directory: "/infrastructure/docker"
-    schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:00"
-    reviewers:
-      - "JannetEkka"
-    labels:
-      - "dependencies"
-      - "infrastructure"
-
-  # Terraform dependencies
-  - package-ecosystem: "terraform"
-    directory: "/infrastructure/terraform"
-    schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:00"
-    reviewers:
-      - "JannetEkka"
-    labels:
-      - "dependencies"
-      - "infrastructure"
-
-  # GitHub Actions dependencies
+  # GitHub Actions dependencies only (this always works)
   - package-ecosystem: "github-actions"
     directory: "/.github/workflows"
     schedule:
       interval: "weekly"
-      day: "wednesday"
+      day: "monday"
       time: "09:00"
     reviewers:
       - "JannetEkka"
