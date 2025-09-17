@@ -1,15 +1,23 @@
-# Simplified Dependabot configuration for MedTestAI
+# .github/dependabot.yml
 version: 2
 updates:
-  # GitHub Actions dependencies only (this always works)
   - package-ecosystem: "github-actions"
     directory: "/.github/workflows"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    reviewers:
-      - "JannetEkka"
-    labels:
-      - "dependencies"
-      - "ci-cd"
+      interval: "monthly"
+    target-branch: "dependabot-updates"
+    open-pull-requests-limit: 3
+    
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    target-branch: "dependabot-updates"
+    open-pull-requests-limit: 3
+    
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"  
+    target-branch: "dependabot-updates"
+    open-pull-requests-limit: 3
