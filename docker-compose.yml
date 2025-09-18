@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://medtestai:password@postgres:5432/medtestai_dev
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - medtestai-network
+
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: medtestai_dev
+      POSTGRES_USER: medtestai
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - medtestai-network
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - medtestai-network
+
+networks:
+  medtestai-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

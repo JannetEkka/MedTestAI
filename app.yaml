@@ -1,0 +1,224 @@
+# MedTestAI Healthcare AI Testing Platform
+# Google App Engine deployment configuration
+# Project: pro-variety-472211-b9
+# HIPAA-compliant production deployment
+
+runtime: nodejs20
+service: medtestai-api
+service_account: medtestai-github-actions@pro-variety-472211-b9.iam.gserviceaccount.com
+
+# VPC Configuration for healthcare data isolation
+vpc_access_connector:
+  name: "projects/pro-variety-472211-b9/locations/us-central1/connectors/medtestai-connector"
+  egress_setting: private-ranges-only
+
+# Environment configuration
+env_variables:
+  NODE_ENV: "production"
+  HEALTHCARE_ENVIRONMENT: "production"
+  
+  # Project and location configuration
+  GOOGLE_CLOUD_PROJECT_ID: "pro-variety-472211-b9"
+  GOOGLE_CLOUD_REGION: "us-central1"
+  
+  # Healthcare API configuration
+  HEALTHCARE_PROJECT_ID: "pro-variety-472211-b9"
+  HEALTHCARE_LOCATION: "us-central1"
+  HEALTHCARE_DATASET_ID: "medtestai-dataset"
+  FHIR_STORE_ID: "medtestai-fhir-store"
+  
+  # Document AI configuration
+  DOCUMENT_AI_LOCATION: "us"
+  DOCUMENT_AI_PROCESSOR_ID: "medical-form-processor"
+  
+  # Vertex AI configuration
+  VERTEX_AI_LOCATION: "us-central1"
+  VERTEX_AI_ENDPOINT: "projects/pro-variety-472211-b9/locations/us-central1/endpoints"
+  
+  # Application configuration
+  LOG_LEVEL: "info"
+  SESSION_TIMEOUT: "28800" # 8 hours in seconds
+  MAX_FILE_SIZE: "10485760" # 10MB in bytes
+  
+  # Security configuration
+  ENABLE_AUDIT_LOGGING: "true"
+  ENABLE_PHI_SANITIZATION: "true"
+  REQUIRE_MFA: "true"
+  
+  # Rate limiting
+  RATE_LIMIT_WINDOW_MS: "900000" # 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  
+  # CORS origins
+  CORS_ORIGINS: "https://medtestai-frontend.uc.r.appspot.com,https://pro-variety-472211-b9.uc.r.appspot.com"
+
+# Secrets from Secret Manager (HIPAA-compliant secret storage)
+env_variables:
+  # Database connections
+  DATABASE_URL: "projects/pro-variety-472211-b9/secrets/medtestai-db-url/versions/latest"
+  
+  # Authentication secrets
+  JWT_SECRET: "projects/pro-variety-472211-b9/secrets/jwt-secret/versions/latest"
+  SESSION_SECRET: "projects/pro-variety-472211-b9/secrets/session-secret/versions/latest"
+  
+  # API keys and tokens
+  FHIR_API_TOKEN: "projects/pro-variety-472211-b9/secrets/fhir-api-token/versions/latest"
+  DOCUMENT_AI_API_KEY: "projects/pro-variety-472211-b9/secrets/document-ai-key/versions/latest"
+  
+  # PHI encryption keys
+  PHI_ENCRYPTION_KEY: "projects/pro-variety-472211-b9/secrets/phi-encryption-key/versions/latest"
+  
+  # Enterprise tool integrations
+  JIRA_API_TOKEN: "projects/pro-variety-472211-b9/secrets/jira-api-token/versions/latest"
+  TESTRAIL_API_KEY: "projects/pro-variety-472211-b9/secrets/testrail-api-key/versions/latest"
+  AZURE_DEVOPS_PAT: "projects/pro-variety-472211-b9/secrets/azure-devops-pat/versions/latest"
+  JENKINS_API_TOKEN: "projects/pro-variety-472211-b9/secrets/jenkins-api-token/versions/latest"
+
+# Scaling configuration optimized for healthcare workloads
+instance_class: F4_1G
+automatic_scaling:
+  target_cpu_utilization: 0.65
+  min_instances: 3 # Always maintain minimum instances for healthcare availability
+  max_instances: 50
+  min_pending_latency: 30ms
+  max_pending_latency: 300ms
+  max_concurrent_requests: 80
+
+# Healthcare-specific request handling with maximum security
+handlers:
+# Health check endpoint (no PHI, publicly accessible for load balancers)
+- url: /health
+  script: auto
+  secure: always
+  login: optional
+  
+# Authentication endpoints
+- url: /auth/.*
+  script: auto
+  secure: always
+  login: optional
+  http_headers:
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+    X-XSS-Protection: "1; mode=block"
+    Cache-Control: "no-cache, no-store, must-revalidate, private"
+
+# API endpoints (PHI handling - highest security)
+- url: /api/.*
+  script: auto
+  secure: always
+  login: required
+  http_headers:
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+    X-XSS-Protection: "1; mode=block"
+    Cache-Control: "no-cache, no-store, must-revalidate, private"
+    X-Robots-Tag: "noindex, nofollow"
+
+# FHIR API endpoints (PHI handling - healthcare-specific headers)
+- url: /fhir/.*
+  script: auto
+  secure: always
+  login: required
+  http_headers:
+    Content-Type: "application/fhir+json"
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+    Cache-Control: "no-cache, no-store, must-revalidate, private"
+    X-Robots-Tag: "noindex, nofollow"
+
+# Static assets (if any)
+- url: /static
+  static_dir: static
+  secure: always
+  http_headers:
+    Cache-Control: "public, max-age=3600"
+    X-Content-Type-Options: "nosniff"
+
+# Default handler with forced HTTPS redirect
+- url: /.*
+  script: auto
+  secure: always
+  redirect_http_response_code: 301
+  http_headers:
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+
+# Enable warmup requests for consistent performance
+inbound_services:
+- warmup
+
+# Beta features for enhanced functionality
+beta_settings:
+  # Enable modern Node.js features
+  cloud_sql_instances: pro-variety-472211-b9:us-central1:medtestai-postgres
+
+# Network configuration for healthcare compliance
+network:
+  session_affinity: true
+  
+# Error handlers for healthcare-appropriate error pages
+error_handlers:
+- file: error_handlers/404.html
+  error_code: over_quota
+- file: error_handlers/500.html
+  error_code: dos_api_denial
+- file: error_handlers/500.html
+  error_code: timeout
+
+# Skip files for security (prevent access to sensitive files)
+skip_files:
+- ^(.*/)?#.*#$
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?.*/RCS/.*$
+- ^(.*/)?\..*$
+- ^(.*/)?node_modules/.*$
+- ^(.*/)?\.env$
+- ^(.*/)?\.env\..*$
+- ^(.*/)?config/.*\.json$
+- ^(.*/)?logs/.*$
+- ^(.*/)?secrets/.*$
+- ^(.*/)?\.git/.*$
+- ^(.*/)?tests?/.*$
+- ^(.*/)?.*\.test\.js$
+- ^(.*/)?.*\.spec\.js$
+
+# Healthcare-specific deployment settings
+deployment_settings:
+  # Enable container optimizations
+  container_optimizations: true
+  
+  # Health check configuration
+  readiness_check:
+    path: "/health"
+    check_interval_sec: 5
+    timeout_sec: 4
+    failure_threshold: 2
+    success_threshold: 2
+    app_start_timeout_sec: 300
+
+  liveness_check:
+    path: "/health"
+    check_interval_sec: 30
+    timeout_sec: 4
+    failure_threshold: 4
+    success_threshold: 2
+
+# Resource limits for healthcare workloads
+resources:
+  cpu: 1
+  memory_gb: 1
+  disk_size_gb: 10
+
+# Entrypoint configuration
+entrypoint: npm start
+
+# Build environment variables
+build_env_variables:
+  NODE_ENV: "production"
+  NPM_CONFIG_PRODUCTION: "true"

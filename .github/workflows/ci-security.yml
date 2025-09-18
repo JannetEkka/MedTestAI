@@ -61,3 +61,16 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Repository: ${{ github.repository }}"
           echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Debug Authentication
+        run: |
+          echo "WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}"
+          echo "SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}

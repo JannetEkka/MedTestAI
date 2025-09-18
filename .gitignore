@@ -1,0 +1,134 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production builds
+/build
+/dist
+frontend/build/
+frontend/dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Google Cloud and healthcare credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+service-account-*.json
+*-key.json
+gcloud-key.json
+medtestai-sa-key.json
+
+# Healthcare data (NEVER commit real PHI)
+/data/real-patient-data/
+/data/phi/
+*.phi
+patient-data/
+real-healthcare-docs/
+
+# Secrets and certificates
+secrets/
+*.pem
+*.p12
+*.key
+*.crt
+
+# Python (for ML components)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ml/venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Backup files
+*.bak
+*.backup
+
+# OS generated files
+.DS_Store?
+ehthumbs.db
+Icon?
+
+# Testing
+/coverage
+
+# Firebase
+.firebase/
+.firebaserc
+
+# Google Cloud
+.gcloudignore
+
+# Terraform (if using IaC)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Healthcare compliance audit logs (local)
+audit-logs/
+hipaa-logs/
+compliance-reports/
+
+# Large model files
+*.pkl
+*.model
+*.weights
+models/large/
+
+# Documentation builds
+docs/_build/
