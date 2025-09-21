@@ -1,12 +1,16 @@
 {
   "name": "medtestai-frontend",
   "version": "1.0.0",
-  "description": "AI-Powered Healthcare Testing Platform - Frontend",
   "private": true,
-  "proxy": "http://localhost:3001",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/JannetEkka/MedTestAI.git"
+  "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.0",
+    "@mui/material": "^5.15.0",
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -14,11 +18,9 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+  "devDependencies": {
+    "cross-env": "^10.0.0",
+    "react-scripts": "5.0.1"
   },
   "browserslist": {
     "production": [

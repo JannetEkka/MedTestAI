@@ -1,20 +1,21 @@
 FROM node:18-alpine
+
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S medtestai -u 1001
+# Copy package files
+COPY package*.json ./
 
 # Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --only=production
 
-# Copy application code
+# Copy source code
 COPY . .
-RUN chown -R medtestai:nodejs /app
 
-# Run as non-root user
-USER medtestai
+# Expose port
+EXPOSE 8080
 
-EXPOSE 3000
+# Set PORT environment variable for Cloud Run
+ENV PORT=8080
+
+# Start the application
 CMD ["npm", "start"]

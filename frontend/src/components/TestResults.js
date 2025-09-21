@@ -54,7 +54,7 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
         compliance: complianceFramework
       };
 
-      const response = await fetch('http://localhost:3001/api/tests/export', {
+      const response = await fetch(`https://medtestai-backend-1067292712875.us-central1.run.app/api/api/tests/export`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

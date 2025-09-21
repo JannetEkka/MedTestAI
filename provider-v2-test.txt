@@ -1,1 +1,43 @@
-Testing new provider v2 - Thu, Sep 18, 2025  5:06:54 AM
+What's Actually Happening:
+
+Multer: Only handles file upload - receives the file from browser and stores it temporarily in uploads/ folder
+
+Document AI: Supposed to do intelligent parsing (extract form fields, recognize medical terminology, structure data) - but it's failing with "processor not found"
+
+Basic text extraction: Your fallback fs.readFileSync(filePath, 'utf8') just reads the file as plain text
+
+Document AI is NOT for authentication - it's for intelligent document processing. The authentication is handled by your service account credentials.
+
+What Document AI Should Do:
+
+Extract form fields from PDFs (patient name, insurance info, etc.)
+
+Recognize medical entities and terminology
+
+Structure unstructured documents
+
+Provide confidence scores for extracted data
+
+What's Currently Happening: Since Document AI is failing, your system falls back to basic text reading, which just:
+
+Reads the entire file as one big text string
+
+Uses simple keyword matching to find "requirements"
+
+No intelligent field extraction or medical context understanding
+
+The Flow Should Be:
+
+File Upload → Multer (temporary storage) → Document AI (intelligent parsing) → Requirements extraction → Gemini AI
+
+
+But Currently Is:
+
+File Upload → Multer (temporary storage) → Document AI (fails) → Basic text reading → Requirements extraction → Gemini AI
+
+
+So you're missing the intelligent document processing that Document AI should provide. That's why you're not seeing extracted form fields or medical entities - just basic text pattern matching.
+
+can you research how to fix this? check project knwoledge for code files and i have attched gcloud console screenshots on main service acc, apis, document ai and phi buckets. please help.
+
+another thing is if we dont have a protoype link (and i dont mean localhost :)), we wont get selected to phase 3, so please help with this too.

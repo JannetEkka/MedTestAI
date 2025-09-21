@@ -80,7 +80,7 @@ const DocumentUpload = ({ onDocumentProcessed, disabled, methodology, compliance
       formData.append('methodology', methodology);
       formData.append('complianceFramework', compliance);
 
-      const response = await fetch('http://localhost:3000/api/workflow/complete', {
+      const response = await fetch(`https://medtestai-backend-1067292712875.us-central1.run.app/api/api/workflow/complete`, {
         method: 'POST',
         body: formData
       });
@@ -118,7 +118,7 @@ const DocumentUpload = ({ onDocumentProcessed, disabled, methodology, compliance
     setProcessing(true);
     
     try {
-      const response = await fetch('http://localhost:3000/api/workflow/complete', {
+      const response = await fetch(`https://medtestai-backend-1067292712875.us-central1.run.app/api/api/workflow/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

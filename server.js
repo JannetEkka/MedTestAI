@@ -7,6 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
+// Google Cloud Services
+import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+import { Storage } from '@google-cloud/storage';
+import { SpeechClient } from '@google-cloud/speech';
+
 // ES module dirname fix
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +19,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors({
@@ -24,7 +29,29 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// File upload setup
+// Google Cloud Services Initialization
+let documentAI, cloudStorage, speechClient, bucket;
+
+try {
+  // Document AI setup
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    documentAI = new DocumentProcessorServiceClient();
+    cloudStorage = new Storage();
+    speechClient = new SpeechClient();
+    
+    // Initialize storage bucket
+    const bucketName = process.env.GCS_BUCKET_NAME || 'medtestai-documents';
+    bucket = cloudStorage.bucket(bucketName);
+    
+    console.log('✅ Google Cloud services initialized');
+  } else {
+    console.log('⚠️ Google Cloud credentials not found - using basic mode');
+  }
+} catch (error) {
+  console.log('⚠️ Google Cloud initialization failed - using basic mode:', error.message);
+}
+
+// Enhanced file upload with cloud storage
 const upload = multer({
   dest: 'uploads/',
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -262,53 +289,187 @@ Response format:
   }
 }
 
-// Initialize Gemini service
-let geminiService;
-try {
-  geminiService = new GeminiService();
-} catch (error) {
-  console.error('❌ Gemini initialization failed:', error.message);
+// Document AI Processing Service
+class HealthcareDocumentProcessor {
+  constructor() {
+    this.processorName = process.env.DOCUMENT_AI_PROCESSOR_NAME;
+  }
+
+  async processDocument(filePath, mimeType) {
+    if (!documentAI || !this.processorName) {
+      console.log('📄 Document AI not available - using basic text extraction');
+      return this.basicTextExtraction(filePath);
+    }
+
+    try {
+      console.log('📄 Processing document with Document AI...');
+      
+      const imageFile = fs.readFileSync(filePath);
+      const encodedImage = Buffer.from(imageFile).toString('base64');
+      
+      const request = {
+        name: this.processorName,
+        rawDocument: {
+          content: encodedImage,
+          mimeType: mimeType
+        },
+      };
+
+      const [result] = await documentAI.processDocument(request);
+      
+      return {
+        fullText: result.document.text,
+        formFields: this.extractFormFields(result.document),
+        entities: this.extractEntities(result.document),
+        processingMethod: 'Document AI'
+      };
+    } catch (error) {
+      console.error('Document AI processing failed:', error.message);
+      return this.basicTextExtraction(filePath);
+    }
+  }
+
+  basicTextExtraction(filePath) {
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      return {
+        fullText: fileContent,
+        formFields: [],
+        entities: [],
+        processingMethod: 'Basic Text Extraction'
+      };
+    } catch (error) {
+      console.error('Basic text extraction failed:', error);
+      return {
+        fullText: '',
+        formFields: [],
+        entities: [],
+        processingMethod: 'Failed'
+      };
+    }
+  }
+
+  extractFormFields(document) {
+    const fields = [];
+    document.pages?.forEach(page => {
+      page.formFields?.forEach(field => {
+        const fieldName = this.getTextFromAnchor(field.fieldName?.textAnchor, document.text);
+        const fieldValue = this.getTextFromAnchor(field.fieldValue?.textAnchor, document.text);
+        
+        fields.push({
+          field: fieldName.trim(),
+          value: fieldValue.trim(),
+          confidence: field.fieldName?.confidence || 0
+        });
+      });
+    });
+    return fields;
+  }
+
+  extractEntities(document) {
+    const entities = [];
+    document.entities?.forEach(entity => {
+      entities.push({
+        type: entity.type,
+        mention: entity.mentionText,
+        confidence: entity.confidence
+      });
+    });
+    return entities;
+  }
+
+  getTextFromAnchor(textAnchor, fullText) {
+    if (!textAnchor?.textSegments?.length) return '';
+    const segment = textAnchor.textSegments[0];
+    return fullText.substring(segment.startIndex || 0, segment.endIndex);
+  }
 }
 
-// Document processing function
-async function processDocument(filePath, originalName) {
-  try {
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    
-    // Simple text extraction for demo
-    const requirements = [];
-    const lines = fileContent.split('\n').filter(line => line.trim());
-    
-    lines.forEach((line, index) => {
-      if (line.length > 20 && (
-        line.toLowerCase().includes('shall') ||
-        line.toLowerCase().includes('must') ||
-        line.toLowerCase().includes('should') ||
-        line.toLowerCase().includes('requirement') ||
-        line.toLowerCase().includes('system') ||
-        line.toLowerCase().includes('user') ||
-        line.toLowerCase().includes('patient') ||
-        line.toLowerCase().includes('provider')
-      )) {
-        requirements.push({
-          id: `REQ${String(index + 1).padStart(3, '0')}`,
-          text: line.trim(),
-          category: line.toLowerCase().includes('security') ? 'security' :
-                   line.toLowerCase().includes('patient') ? 'privacy' :
-                   line.toLowerCase().includes('auth') ? 'authentication' : 'functional',
-          risk: line.toLowerCase().includes('critical') || line.toLowerCase().includes('security') ? 'high' : 'medium'
-        });
-      }
-    });
+// Cloud Storage Service
+class CloudStorageService {
+  async uploadDocument(filePath, fileName, metadata = {}) {
+    if (!bucket) {
+      console.log('☁️ Cloud Storage not available - using local storage');
+      return { 
+        fileName, 
+        url: `http://localhost:${PORT}/uploads/${fileName}`,
+        storage: 'local' 
+      };
+    }
 
+    try {
+      console.log('☁️ Uploading to Google Cloud Storage...');
+      
+      const destination = `healthcare-docs/${Date.now()}-${fileName}`;
+      
+      await bucket.upload(filePath, {
+        destination,
+        metadata: {
+          metadata: {
+            ...metadata,
+            uploadDate: new Date().toISOString(),
+            hipaaCompliant: 'true'
+          }
+        }
+      });
+
+      // Generate signed URL for secure access
+      const [url] = await bucket.file(destination).getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      });
+
+      return {
+        fileName: destination,
+        url,
+        storage: 'google-cloud'
+      };
+    } catch (error) {
+      console.error('Cloud Storage upload failed:', error.message);
+      return { 
+        fileName, 
+        url: `http://localhost:${PORT}/uploads/${fileName}`,
+        storage: 'local-fallback' 
+      };
+    }
+  }
+}
+
+// Initialize services
+const geminiService = new GeminiService();
+const documentProcessor = new HealthcareDocumentProcessor();
+const storageService = new CloudStorageService();
+
+// Enhanced document processing function
+async function processDocumentAdvanced(filePath, originalName, mimeType) {
+  try {
+    console.log(`📄 Processing document: ${originalName}`);
+    
+    // Step 1: Process with Document AI or basic extraction
+    const documentData = await documentProcessor.processDocument(filePath, mimeType);
+    
+    // Step 2: Upload to cloud storage
+    const storageResult = await storageService.uploadDocument(filePath, originalName, {
+      documentType: 'healthcare-requirements',
+      processingMethod: documentData.processingMethod
+    });
+    
+    // Step 3: Extract requirements from processed text
+    const requirements = extractRequirements(documentData.fullText);
+    
     return {
       filename: originalName,
-      requirements: requirements.slice(0, 10), // Limit for demo
+      requirements,
       documentType: path.extname(originalName).toLowerCase(),
-      processedAt: new Date().toISOString()
+      processedAt: new Date().toISOString(),
+      processingMethod: documentData.processingMethod,
+      formFields: documentData.formFields,
+      entities: documentData.entities,
+      storageInfo: storageResult
     };
   } catch (error) {
-    console.error('Document processing error:', error);
+    console.error('Advanced document processing error:', error);
     return {
       filename: originalName,
       requirements: [],
@@ -319,27 +480,69 @@ async function processDocument(filePath, originalName) {
   }
 }
 
+function extractRequirements(text) {
+  const requirements = [];
+  const lines = text.split('\n').filter(line => line.trim());
+  
+  lines.forEach((line, index) => {
+    if (line.length > 20 && (
+      line.toLowerCase().includes('shall') ||
+      line.toLowerCase().includes('must') ||
+      line.toLowerCase().includes('should') ||
+      line.toLowerCase().includes('requirement') ||
+      line.toLowerCase().includes('system') ||
+      line.toLowerCase().includes('user') ||
+      line.toLowerCase().includes('patient') ||
+      line.toLowerCase().includes('provider') ||
+      line.toLowerCase().includes('data') ||
+      line.toLowerCase().includes('security') ||
+      line.toLowerCase().includes('privacy')
+    )) {
+      requirements.push({
+        id: `REQ${String(index + 1).padStart(3, '0')}`,
+        text: line.trim(),
+        category: line.toLowerCase().includes('security') ? 'security' :
+                 line.toLowerCase().includes('patient') ? 'privacy' :
+                 line.toLowerCase().includes('auth') ? 'authentication' : 
+                 line.toLowerCase().includes('data') ? 'data-management' : 'functional',
+        risk: line.toLowerCase().includes('critical') || line.toLowerCase().includes('security') ? 'high' : 'medium'
+      });
+    }
+  });
+
+  return requirements.slice(0, 15); // Limit for demo
+}
+
 // API Routes
 
-// Health check
+// Health check with service status
 app.get('/health', (req, res) => {
+  const services = ['Express Server'];
+  if (geminiService.genAI) services.push('Gemini AI');
+  if (documentAI) services.push('Document AI');
+  if (cloudStorage) services.push('Cloud Storage');
+  if (speechClient) services.push('Speech-to-Text');
+  
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     project: process.env.GOOGLE_CLOUD_PROJECT || 'pro-variety-472211-b9',
-    services: ['Gemini AI', 'Document Processing']
+    services: services
   });
 });
 
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
-    geminiAvailable: !!geminiService,
+    geminiAvailable: !!geminiService.genAI,
+    documentAIAvailable: !!documentAI,
+    cloudStorageAvailable: !!cloudStorage,
+    speechAvailable: !!speechClient,
     timestamp: new Date().toISOString()
   });
 });
 
-// Main workflow endpoint
+// Enhanced workflow endpoint
 app.post('/api/workflow/complete', upload.single('document'), async (req, res) => {
   try {
     const { methodology = 'agile', complianceFramework = 'HIPAA' } = req.body;
@@ -352,7 +555,9 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
     // Process uploaded document
     if (req.file) {
       console.log(`📄 Processing uploaded file: ${req.file.originalname}`);
-      extractedData = await processDocument(req.file.path, req.file.originalname);
+      
+      const mimeType = req.file.mimetype || 'application/pdf';
+      extractedData = await processDocumentAdvanced(req.file.path, req.file.originalname, mimeType);
       requirements = extractedData.requirements.map(req => req.text);
       
       // Clean up uploaded file
@@ -364,7 +569,10 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
         'Patient data must be encrypted during transmission and storage',
         'System must provide audit logging for all PHI access',
         'Role-based access control must be implemented',
-        'Data backup and recovery procedures must be tested'
+        'Data backup and recovery procedures must be tested',
+        'Patient consent must be obtained before data processing',
+        'System must support multi-factor authentication',
+        'Data retention policies must comply with healthcare regulations'
       ];
       
       extractedData = {
@@ -376,7 +584,8 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
           risk: 'medium'
         })),
         documentType: '.txt',
-        processedAt: new Date().toISOString()
+        processedAt: new Date().toISOString(),
+        processingMethod: 'Default Dataset'
       };
     }
 
@@ -395,7 +604,12 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
       complianceFramework,
       extractedData,
       testCases: aiResponse,
-      processedAt: new Date().toISOString()
+      processedAt: new Date().toISOString(),
+      serviceStatus: {
+        documentAI: !!documentAI,
+        cloudStorage: !!cloudStorage,
+        geminiAI: !!geminiService.genAI
+      }
     });
 
   } catch (error) {
@@ -417,7 +631,7 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
   }
 });
 
-// Export endpoint
+// Enhanced export endpoint
 app.post('/api/tests/export', async (req, res) => {
   try {
     const { 
@@ -469,7 +683,9 @@ app.post('/api/tests/export', async (req, res) => {
             exportDate: new Date().toISOString(),
             methodology,
             complianceFramework: compliance,
-            totalTestCases: testCases.length
+            totalTestCases: testCases.length,
+            platform: 'MedTestAI',
+            version: '1.0.0'
           },
           testCases: testCases
         }, null, 2);
@@ -514,11 +730,58 @@ app.post('/api/tests/export', async (req, res) => {
       filename,
       mimeType,
       exportedCount: testCases.length,
-      format
+      format,
+      serviceInfo: 'Enhanced with Google Cloud integration'
     });
 
   } catch (error) {
     console.error('Export error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Audio transcription endpoint (Speech-to-Text)
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+  if (!speechClient) {
+    return res.status(503).json({
+      success: false,
+      error: 'Speech-to-Text service not available'
+    });
+  }
+
+  try {
+    const audioBytes = fs.readFileSync(req.file.path).toString('base64');
+    
+    const request = {
+      audio: { content: audioBytes },
+      config: {
+        encoding: 'WEBM_OPUS',
+        sampleRateHertz: 16000,
+        languageCode: 'en-US',
+        model: 'medical_conversation',
+        useEnhanced: true,
+      },
+    };
+    
+    const [response] = await speechClient.recognize(request);
+    const transcript = response.results
+      .map(result => result.alternatives[0].transcript)
+      .join('\n');
+    
+    // Clean up audio file
+    fs.unlinkSync(req.file.path);
+    
+    res.json({
+      success: true,
+      transcript,
+      confidence: response.results[0]?.alternatives[0]?.confidence || 0
+    });
+    
+  } catch (error) {
+    console.error('Transcription error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -531,7 +794,10 @@ app.listen(PORT, () => {
   console.log(`🚀 MedTestAI Backend running on http://localhost:${PORT}`);
   console.log(`🔗 Frontend should connect to: http://localhost:${PORT}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-  console.log(`🤖 Gemini AI: ${geminiService ? 'READY ✅' : 'MOCK MODE ⚠️'}`);
+  console.log(`🤖 Gemini AI: ${geminiService.genAI ? 'READY ✅' : 'MOCK MODE ⚠️'}`);
+  console.log(`📄 Document AI: ${documentAI ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
+  console.log(`☁️ Cloud Storage: ${cloudStorage ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
+  console.log(`🎤 Speech-to-Text: ${speechClient ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
   console.log(`📋 Ready for healthcare test generation!`);
 });
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://medtestai-backend-1067292712875.us-central1.run.app/api';
 
 function App() {
   const [file, setFile] = useState(null);
@@ -32,9 +32,9 @@ function App() {
       formData.append('methodology', methodology);
       formData.append('complianceFramework', complianceFramework);
 
-      console.log('🚀 Sending request to:', `${API_BASE_URL}/workflow/complete`);
+      console.log('🚀 Sending request to:', `https://medtestai-backend-1067292712875.us-central1.run.app/api/workflow/complete`);
 
-      const response = await fetch(`${API_BASE_URL}/workflow/complete`, {
+      const response = await fetch(`https://medtestai-backend-1067292712875.us-central1.run.app/api/workflow/complete`, {
         method: 'POST',
         body: formData
       });
@@ -86,7 +86,7 @@ function App() {
 
   const testBackendConnection = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
+      const response = await fetch('https://medtestai-backend-1067292712875.us-central1.run.app/health');
       const data = await response.json();
       alert(`✅ Backend Connected!\nStatus: ${data.status}\nProject: ${data.project}\nServices: ${data.services?.join(', ') || 'Healthcare AI'}`);
     } catch (error) {
@@ -101,7 +101,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/tests/export`, {
+      const response = await fetch(`https://medtestai-backend-1067292712875.us-central1.run.app/api/tests/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
