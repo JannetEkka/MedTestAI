@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedTestAI Healthcare Platform</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .info { background: #e2f3ff; border: 1px solid #b6d4fe; }
+        .upload-area { border: 2px dashed #007bff; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }
+        .results { background: white; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #007bff; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .loading { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Ìø• MedTestAI Healthcare AI Platform</h1>
+    <p>Upload healthcare documents and generate AI-powered test cases</p>
+
+    <div class="container success">
+        <h3>‚úÖ System Status</h3>
+        <p id="backend-status">Checking backend connection...</p>
+        <p><strong>Project:</strong> medtestai-1758238952</p>
+        <p><strong>Backend:</strong> http://localhost:3000</p>
+    </div>
+
+    <div class="container info">
+        <h3>Ì≥Ñ Document Upload & AI Processing</h3>
+        <div class="upload-area">
+            <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" style="margin-bottom: 10px;">
+            <br>
+            <button onclick="processDocument()">Ì¥ñ Process with AI</button>
+        </div>
+        <div id="processing" style="display: none;" class="loading">
+            ‚è≥ Processing document with healthcare AI models...
+        </div>
+    </div>
+
+    <div id="results-container" style="display: none;">
+        <h3>Ì∑™ AI-Generated Test Cases</h3>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Check backend status
+        async function checkBackendStatus() {
+            try {
+                const response = await fetch('http://localhost:3000/health');
+                const data = await response.json();
+                document.getElementById('backend-status').innerHTML = `
+                    ‚úÖ Backend connected successfully<br>
+                    <small>Status: ${data.status} | Project: ${data.project}</small>
+                `;
+            } catch (error) {
+                document.getElementById('backend-status').innerHTML = '‚ùå Backend connection failed - make sure server is running';
+            }
+        }
+
+        // Process document with AI
+        async function processDocument() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file first');
+                return;
+            }
+
+            document.getElementById('processing').style.display = 'block';
+            document.getElementById('results-container').style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('document', file);
+                formData.append('methodology', 'agile');
+                formData.append('complianceFramework', 'HIPAA');
+
+                const response = await fetch('http://localhost:3000/api/workflow/complete', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                alert('Error processing document: ' + error.message);
+            } finally {
+                document.getElementById('processing').style.display = 'none';
+            }
+        }
+
+        // Display AI results
+        function displayResults(data) {
+            const resultsContainer = document.getElementById('results-container');
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="container success">
+                    <h4>Ì≥ä Processing Summary</h4>
+                    <p><strong>Document Processed:</strong> ${data.workflow?.documentProcessed ? 'Yes' : 'No'}</p>
+                    <p><strong>Requirements Extracted:</strong> ${data.workflow?.requirementsExtracted || 0}</p>
+                    <p><strong>Test Cases Generated:</strong> ${data.workflow?.testsGenerated || 0}</p>
+                    <p><strong>Compliance Coverage:</strong> ${data.workflow?.complianceCoverage || 0}%</p>
+                </div>
+            `;
+
+            if (data.tests?.testCases) {
+                html += '<h4>Ì∑™ Generated Test Cases:</h4>';
+                data.tests.testCases.slice(0, 5).forEach(test => {
+                    html += `
+                        <div class="results">
+                            <h5>${test.id}: ${test.title}</h5>
+                            <p><strong>Category:</strong> ${test.category} | <strong>Priority:</strong> ${test.priority}</p>
+                            <p><strong>Description:</strong> ${test.description}</p>
+                            <p><strong>Expected Result:</strong> ${test.expectedResult}</p>
+                        </div>
+                    `;
+                });
+                
+                if (data.tests.testCases.length > 5) {
+                    html += `<p><em>... and ${data.tests.testCases.length - 5} more test cases</em></p>`;
+                }
+            }
+
+            if (data.note) {
+                html += `<div class="container info"><p><strong>Note:</strong> ${data.note}</p></div>`;
+            }
+
+            resultsDiv.innerHTML = html;
+            resultsContainer.style.display = 'block';
+        }
+
+        // Check backend status on page load
+        checkBackendStatus();
+    </script>
+</body>
+</html>

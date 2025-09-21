@@ -1,0 +1,17 @@
+Electronic Health Records System Requirements
+
+REQ-FUNC-001: User Authentication and Authorization
+As a healthcare provider, I want to securely log into the EHR system using multi-factor authentication so that patient data remains protected and HIPAA compliant.
+
+Acceptance Criteria:
+- Username and password authentication
+- Multi-factor authentication (SMS/Email/Authenticator app)
+- Role-based access control (Doctor, Nurse, Admin, Patient)
+- Session timeout after 30 minutes of inactivity
+- Failed login attempt lockout after 3 attempts
+
+REQ-SEC-001: Data Encryption
+The system shall encrypt all Protected Health Information (PHI) both at rest and in transit using AES-256 encryption standards.
+
+REQ-SEC-002: Audit Logging
+As a compliance officer, I want comprehensive audit logs of all system activities so that we can demonstrate HIPAA compliance during audits.
