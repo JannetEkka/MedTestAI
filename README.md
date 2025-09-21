@@ -204,7 +204,28 @@ firebase deploy --only hosting
 - Traceability matrix generation
 - Compliance report creation
 
-## 🧪 Sample Test Case Output
+## 🧪 Generated Test Cases Examples
+
+Our platform has successfully generated comprehensive test suites for different healthcare testing methodologies. View the actual generated test cases:
+
+### Real Generated Test Cases
+- **[Agile Methodology Test Cases](medtestaitestcasesagile20250921.csv)** - 9 test cases generated for Agile/Scrum approach
+- **[Waterfall Methodology Test Cases](medtestaitestcaseswaterfall20250921.csv)** - 15 comprehensive test cases for Waterfall approach  
+- **[Hybrid Methodology Test Cases](medtestaitestcaseshybrid20250921.csv)** - 7 test cases for Hybrid development approach
+
+Each generated test case includes:
+- Unique Test ID and descriptive name
+- Priority level (Critical, High, Medium, Low)
+- Healthcare category (authentication, security, compliance, etc.)
+- Detailed testing technique applied
+- Risk level assessment
+- HIPAA compliance requirements mapping
+- Automation potential rating
+- Comprehensive preconditions
+- Step-by-step test procedures
+- Expected results with compliance validation
+
+### Sample Test Case Structure
 
 ```json
 {
@@ -233,6 +254,12 @@ firebase deploy --only hosting
   ]
 }
 ```
+
+### Test Generation Statistics
+- **Total Test Cases Generated**: 31 comprehensive test cases across all methodologies
+- **Coverage Areas**: Authentication, Security, Data Management, Compliance, User Interface
+- **Compliance Frameworks**: HIPAA Privacy Rule, HIPAA Security Rule, FDA 21 CFR Part 820
+- **Testing Techniques**: Functional testing, Security testing, Boundary value analysis, Equivalence partitioning
 
 ## 📈 Performance Metrics
 

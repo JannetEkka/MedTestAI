@@ -632,96 +632,44 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
 });
 
 // Enhanced export endpoint
-app.post('/api/tests/export', async (req, res) => {
+app.post('/api/tests/export', (req, res) => {
   try {
-    const { 
-      testCases = [], 
-      format = 'csv', 
-      methodology = 'agile', 
-      compliance = 'HIPAA'
-    } = req.body;
+    const { testCases = [], format = 'csv' } = req.body;
     
-    console.log(`📤 Exporting ${testCases.length} test cases as ${format}`);
+    console.log(`Exporting ${testCases.length} test cases as ${format}`);
     
     let exportData, filename, mimeType;
     const timestamp = new Date().toISOString().split('T')[0];
     
-    switch (format.toLowerCase()) {
-      case 'csv':
-        const csvHeaders = [
-          'Test ID', 'Test Name', 'Category', 'Priority', 'Description', 
-          'Testing Technique', 'Risk Level', 'Compliance Requirements', 
-          'Automation Potential', 'Preconditions', 'Test Steps', 'Expected Results'
-        ];
-        
-        const csvRows = testCases.map(test => [
-          test.testId || `TC${Math.floor(Math.random() * 1000)}`,
-          test.testName || '',
-          test.category || '',
-          test.priority || 'Medium',
-          (test.description || '').replace(/"/g, '""'),
-          test.testingTechnique || '',
-          test.riskLevel || 'Medium',
-          (test.complianceRequirements || []).join('; '),
-          test.automationPotential || 'Medium',
-          (test.preconditions || []).join('; '),
-          (test.testSteps || []).join('; '),
-          (test.expectedResults || []).join('; ')
-        ]);
-        
-        exportData = [csvHeaders, ...csvRows]
-          .map(row => row.map(cell => `"${cell}"`).join(','))
-          .join('\n');
-        
-        filename = `medtestai-testcases-${methodology}-${timestamp}.csv`;
-        mimeType = 'text/csv';
-        break;
-
-      case 'json':
-        exportData = JSON.stringify({
-          metadata: {
-            exportDate: new Date().toISOString(),
-            methodology,
-            complianceFramework: compliance,
-            totalTestCases: testCases.length,
-            platform: 'MedTestAI',
-            version: '1.0.0'
-          },
-          testCases: testCases
-        }, null, 2);
-        
-        filename = `medtestai-testcases-${methodology}-${timestamp}.json`;
-        mimeType = 'application/json';
-        break;
-
-      case 'excel':
-        // Simple tab-separated format for Excel compatibility
-        const excelHeaders = [
-          'Test ID', 'Test Name', 'Category', 'Priority', 'Description', 
-          'Testing Technique', 'Risk Level', 'Compliance Requirements'
-        ];
-        
-        const excelRows = testCases.map(test => [
-          test.testId || `TC${Math.floor(Math.random() * 1000)}`,
-          test.testName || '',
-          test.category || '',
-          test.priority || 'Medium',
-          test.description || '',
-          test.testingTechnique || '',
-          test.riskLevel || 'Medium',
-          (test.complianceRequirements || []).join('; ')
-        ]);
-        
-        exportData = [excelHeaders, ...excelRows]
-          .map(row => row.join('\t'))
-          .join('\n');
-        
-        filename = `medtestai-testcases-${methodology}-${timestamp}.xlsx`;
-        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        break;
-
-      default:
-        throw new Error(`Unsupported export format: ${format}`);
+    if (format.toLowerCase() === 'csv') {
+      // FULL CSV with all 12 columns
+      const csvHeaders = [
+        'Test ID', 'Test Name', 'Category', 'Priority', 'Description', 
+        'Testing Technique', 'Risk Level', 'Compliance Requirements', 
+        'Automation Potential', 'Preconditions', 'Test Steps', 'Expected Results'
+      ];
+      
+      const csvRows = testCases.map(test => [
+        test.testId || `TC${Math.floor(Math.random() * 1000)}`,
+        test.testName || 'Generated Test Case',
+        test.category || 'functional',
+        test.priority || 'Medium',
+        (test.description || 'AI-generated healthcare test case').replace(/"/g, '""'),
+        test.testingTechnique || 'functional-testing',
+        test.riskLevel || 'Medium',
+        (test.complianceRequirements || ['HIPAA']).join('; '),
+        test.automationPotential || 'Medium',
+        (test.preconditions || ['System operational']).join('; '),
+        (test.testSteps || ['Execute test procedure']).join('; '),
+        (test.expectedResults || ['System functions as expected']).join('; ')
+      ]);
+      
+      exportData = [csvHeaders, ...csvRows]
+        .map(row => row.map(cell => `"${cell}"`).join(','))
+        .join('\n');
+      
+      filename = `medtestai-testcases-comprehensive-${timestamp}.csv`;
+      mimeType = 'text/csv';
     }
 
     res.json({
@@ -730,8 +678,7 @@ app.post('/api/tests/export', async (req, res) => {
       filename,
       mimeType,
       exportedCount: testCases.length,
-      format,
-      serviceInfo: 'Enhanced with Google Cloud integration'
+      format
     });
 
   } catch (error) {
