@@ -8,14 +8,13 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy source code
-COPY . .
+# Copy app files
+COPY server.js ./
+COPY services ./services
+COPY auth ./auth
 
 # Expose port
 EXPOSE 8080
 
-# Set PORT environment variable for Cloud Run
-ENV PORT=8080
-
-# Start the application
+# Start
 CMD ["npm", "start"]
