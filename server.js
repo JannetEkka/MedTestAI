@@ -23,7 +23,12 @@ const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  origin: [
+    'http://localhost:3000', 
+    'http://localhost:3001',
+    'https://pro-variety-472211-b9.web.app',
+    'https://pro-variety-472211-b9.firebaseapp.com'
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
