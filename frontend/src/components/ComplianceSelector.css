@@ -1,0 +1,384 @@
+/* frontend/src/components/ComplianceSelector.css */
+
+.compliance-selector {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.compliance-header {
+  margin-bottom: 20px;
+}
+
+.compliance-header h3 {
+  font-size: 24px;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compliance-header .icon {
+  font-size: 28px;
+}
+
+.compliance-subtitle {
+  color: #7f8c8d;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Controls Section */
+.compliance-controls {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.compliance-search {
+  flex: 1;
+  min-width: 250px;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 40px 12px 16px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.search-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: #95a5a6;
+}
+
+.compliance-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.action-btn.select-all {
+  background: #27ae60;
+  color: white;
+}
+
+.action-btn.select-all:hover {
+  background: #229954;
+  transform: translateY(-1px);
+}
+
+.action-btn.clear-all {
+  background: #e74c3c;
+  color: white;
+}
+
+.action-btn.clear-all:hover {
+  background: #c0392b;
+  transform: translateY(-1px);
+}
+
+/* Summary Section */
+.compliance-summary {
+  background: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-left: 4px solid #3498db;
+}
+
+.summary-icon {
+  font-size: 20px;
+}
+
+.summary-text {
+  flex: 1;
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.summary-count {
+  background: #3498db;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Compliance Grid */
+.compliance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.compliance-card {
+  background: white;
+  border-radius: 10px;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.compliance-card:hover {
+  border-color: #3498db;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+}
+
+.compliance-card.selected {
+  border-color: #27ae60;
+  background: linear-gradient(135deg, #ffffff 0%, #e8f5e9 100%);
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.2);
+}
+
+.compliance-label {
+  display: block;
+  cursor: pointer;
+  padding: 16px;
+}
+
+.compliance-checkbox {
+  display: none;
+}
+
+.compliance-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compliance-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.compliance-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.compliance-info {
+  flex: 1;
+}
+
+.compliance-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 4px 0;
+}
+
+.compliance-full-name {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.compliance-region {
+  background: #ecf0f1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #34495e;
+  white-space: nowrap;
+}
+
+.compliance-description {
+  font-size: 13px;
+  color: #5a6c7d;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.show-details-btn {
+  background: none;
+  border: none;
+  color: #3498db;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 0;
+  text-align: left;
+  transition: color 0.2s ease;
+}
+
+.show-details-btn:hover {
+  color: #2980b9;
+  text-decoration: underline;
+}
+
+.compliance-requirements {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.compliance-requirements ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compliance-requirements li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: #34495e;
+  line-height: 1.4;
+}
+
+.req-bullet {
+  color: #27ae60;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Footer Section */
+.compliance-footer {
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  border-top: 3px solid #3498db;
+}
+
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.remove-tag {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.remove-tag:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+/* No Results */
+.no-results {
+  text-align: center;
+  padding: 40px;
+  color: #7f8c8d;
+}
+
+.no-results p {
+  font-size: 16px;
+  margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .compliance-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .compliance-controls {
+    flex-direction: column;
+  }
+  
+  .compliance-search {
+    min-width: 100%;
+  }
+  
+  .compliance-actions {
+    width: 100%;
+  }
+  
+  .action-btn {
+    flex: 1;
+  }
+}
+
+/* Accessibility */
+.compliance-checkbox:focus + .compliance-content {
+  outline: 2px solid #3498db;
+  outline-offset: 2px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.compliance-card {
+  animation: fadeIn 0.3s ease;
+}
+
+.compliance-requirements {
+  animation: fadeIn 0.2s ease;
+}

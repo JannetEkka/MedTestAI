@@ -1,100 +1,152 @@
-// src/components/ExportOptions.js
+// frontend/src/components/ExportOptions.js
 import React, { useState } from 'react';
 
 const ExportOptions = ({ testCases = [], metadata = {} }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [lastExport, setLastExport] = useState(null);
+  const [exportError, setExportError] = useState(null);
+
+  const API_URL = process.env.REACT_APP_API_URL || 'https://medtestai-backend-1067292712875.us-central1.run.app';
 
   const handleExport = async (format) => {
     if (!testCases.length) {
-      alert('No test cases available for export');
+      showNotification('⚠️ No test cases available for export', 'warning');
       return;
     }
 
+    console.log(`🔄 [EXPORT] Starting ${format} export...`);
+    console.log(`📊 [EXPORT] Test cases count: ${testCases.length}`);
+    
     setIsExporting(true);
+    setExportError(null);
     
     try {
-      console.log(`🔄 Exporting ${testCases.length} test cases as ${format}...`);
-
-      const response = await fetch('/api/tests/export', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          testCases: testCases,
-          format: format.toLowerCase(),
-          methodology: metadata.methodology || 'agile',
-          compliance: metadata.complianceFramework || 'HIPAA'
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Export failed: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.success) {
-        // Create and trigger download
-        const blob = new Blob([result.data], { 
-          type: result.mimeType || 'text/plain'
-        });
+      // Handle Google Sheets export differently
+      if (format === 'google-sheets') {
+        console.log('📊 [EXPORT] Sending request to Google Sheets API...');
         
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = result.filename || `medtestai-export-${format}-${Date.now()}.txt`;
-        
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-
-        setLastExport({
-          format,
-          timestamp: new Date(),
-          count: result.exportedCount || testCases.length,
-          filename: link.download
+        const response = await fetch(`${API_URL}/api/v1/export/google-sheets`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            testCases,
+            methodology: metadata.methodology || 'agile',
+            compliance: metadata.complianceFramework || 'HIPAA'
+          })
         });
 
-        console.log(`✅ Export successful: ${result.exportedCount} test cases exported as ${format}`);
-        showNotification(`Successfully exported ${result.exportedCount} test cases as ${format.toUpperCase()}`, 'success');
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log('✅ [EXPORT] Google Sheets export successful!');
+          console.log(`📊 [EXPORT] Sheet URL: ${result.sheetUrl}`);
+          
+          // Open the sheet in new tab
+          window.open(result.sheetUrl, '_blank');
+          
+          setLastExport({
+            format,
+            timestamp: new Date(),
+            count: result.updatedRows || testCases.length,
+            filename: 'Google Sheets'
+          });
+          
+          showNotification(`✅ Exported ${testCases.length} test cases to Google Sheets!`, 'success');
+        } else {
+          throw new Error(result.error || 'Export failed');
+        }
         
       } else {
-        throw new Error(result.error || 'Export failed');
+        // Handle other formats (CSV, JSON, Excel)
+        console.log(`📄 [EXPORT] Sending ${format} export request...`);
+        
+        const response = await fetch(`${API_URL}/api/tests/export`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            testCases: testCases,
+            format: format.toLowerCase(),
+            methodology: metadata.methodology || 'agile',
+            compliance: metadata.complianceFramework || 'HIPAA'
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Export failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log(`✅ [EXPORT] ${format} export successful`);
+          
+          // Create and trigger download
+          const blob = new Blob([result.data], { 
+            type: result.mimeType || 'text/plain'
+          });
+          
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = result.filename || `medtestai-export-${format}-${Date.now()}.txt`;
+          
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+
+          setLastExport({
+            format,
+            timestamp: new Date(),
+            count: result.exportedCount || testCases.length,
+            filename: link.download
+          });
+
+          console.log(`✅ [EXPORT] Download triggered: ${link.download}`);
+          showNotification(`✅ Exported ${result.exportedCount} test cases as ${format.toUpperCase()}`, 'success');
+          
+        } else {
+          throw new Error(result.error || 'Export failed');
+        }
       }
 
     } catch (error) {
-      console.error('Export error:', error);
-      showNotification(`Export failed: ${error.message}`, 'error');
+      console.error('❌ [EXPORT] Export failed:', error);
+      setExportError(error.message);
+      showNotification(`❌ Export failed: ${error.message}`, 'error');
     } finally {
       setIsExporting(false);
     }
   };
 
   const showNotification = (message, type) => {
-    // Simple notification system
     const notification = document.createElement('div');
     notification.style.cssText = `
       position: fixed;
       top: 20px;
       right: 20px;
       padding: 12px 16px;
-      background: ${type === 'success' ? '#27ae60' : '#e74c3c'};
+      background: ${type === 'success' ? '#27ae60' : type === 'warning' ? '#f39c12' : '#e74c3c'};
       color: white;
       border-radius: 6px;
       z-index: 1000;
       font-size: 14px;
       max-width: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: slideIn 0.3s ease;
     `;
     notification.textContent = message;
     
     document.body.appendChild(notification);
     
     setTimeout(() => {
-      notification.remove();
+      notification.style.animation = 'slideOut 0.3s ease';
+      setTimeout(() => notification.remove(), 300);
     }, 5000);
   };
 
@@ -114,6 +166,19 @@ const ExportOptions = ({ testCases = [], metadata = {} }) => {
         {testCases.length} test cases • {metadata.complianceFramework || 'HIPAA'} compliant
       </div>
 
+      {exportError && (
+        <div style={{
+          padding: '12px',
+          background: '#fee',
+          border: '1px solid #fcc',
+          borderRadius: '4px',
+          color: '#c33',
+          marginBottom: '16px'
+        }}>
+          ⚠️ {exportError}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
         <button 
           onClick={() => handleExport('csv')}
@@ -124,10 +189,11 @@ const ExportOptions = ({ testCases = [], metadata = {} }) => {
             borderRadius: '6px',
             background: 'white',
             color: '#27ae60',
-            cursor: 'pointer',
+            cursor: isExporting || !testCases.length ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: '500',
-            minWidth: '120px'
+            minWidth: '140px',
+            opacity: isExporting || !testCases.length ? 0.6 : 1
           }}
         >
           {isExporting ? '⏳' : '📊'} CSV Export
@@ -142,10 +208,11 @@ const ExportOptions = ({ testCases = [], metadata = {} }) => {
             borderRadius: '6px',
             background: 'white',
             color: '#3498db',
-            cursor: 'pointer',
+            cursor: isExporting || !testCases.length ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: '500',
-            minWidth: '120px'
+            minWidth: '140px',
+            opacity: isExporting || !testCases.length ? 0.6 : 1
           }}
         >
           {isExporting ? '⏳' : '🔧'} JSON Export
@@ -160,13 +227,33 @@ const ExportOptions = ({ testCases = [], metadata = {} }) => {
             borderRadius: '6px',
             background: 'white',
             color: '#e67e22',
-            cursor: 'pointer',
+            cursor: isExporting || !testCases.length ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: '500',
-            minWidth: '120px'
+            minWidth: '140px',
+            opacity: isExporting || !testCases.length ? 0.6 : 1
           }}
         >
           {isExporting ? '⏳' : '📋'} Excel Export
+        </button>
+
+        <button 
+          onClick={() => handleExport('google-sheets')}
+          disabled={isExporting || !testCases.length}
+          style={{
+            padding: '12px 16px',
+            border: '2px solid #34A853',
+            borderRadius: '6px',
+            background: 'white',
+            color: '#34A853',
+            cursor: isExporting || !testCases.length ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            minWidth: '160px',
+            opacity: isExporting || !testCases.length ? 0.6 : 1
+          }}
+        >
+          {isExporting ? '⏳' : '📊'} Google Sheets
         </button>
       </div>
 

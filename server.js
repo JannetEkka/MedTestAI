@@ -1,634 +1,115 @@
+// server.js - Complete integration with Google Sheets
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
+import dotenv from 'dotenv';
 
-// Google Cloud Services
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
-import { Storage } from '@google-cloud/storage';
-import { SpeechClient } from '@google-cloud/speech';
+// Import services
+import documentProcessor from './services/documentProcessor.js';
+import testCaseGenerator from './services/testCaseGenerator.js';
+import googleSheetsService from './services/google-sheets.js';
 
-// ES module dirname fix
+// ES modules compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({
-  origin: [
-    'http://localhost:3000', 
-    'http://localhost:3001',
-    'https://pro-variety-472211-b9.web.app',
-    'https://pro-variety-472211-b9.firebaseapp.com'
-  ],
-  credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Google Cloud Services Initialization
-let documentAI, cloudStorage, speechClient, bucket;
-
-try {
-  // Document AI setup
-  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    documentAI = new DocumentProcessorServiceClient();
-    cloudStorage = new Storage();
-    speechClient = new SpeechClient();
-    
-    // Initialize storage bucket
-    const bucketName = process.env.GCS_BUCKET_NAME || 'medtestai-documents';
-    bucket = cloudStorage.bucket(bucketName);
-    
-    console.log('✅ Google Cloud services initialized');
-  } else {
-    console.log('⚠️ Google Cloud credentials not found - using basic mode');
-  }
-} catch (error) {
-  console.log('⚠️ Google Cloud initialization failed - using basic mode:', error.message);
-}
-
-// Enhanced file upload with cloud storage
+// Configure multer for file uploads
 const upload = multer({
   dest: 'uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
-    }
-  }
+  limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
 });
 
-// Enhanced Gemini Service
-class GeminiService {
-  constructor() {
-    if (!process.env.GEMINI_API_KEY) {
-      console.log('⚠️ No Gemini API key - using mock mode');
-      this.genAI = null;
-    } else {
-      this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      console.log('✅ Gemini AI initialized');
-    }
-    
-    this.models = [
-      'gemini-2.0-flash-001',
-      'gemini-1.5-flash', 
-      'gemini-1.5-pro'
-    ];
-  }
+// ==================== INITIALIZATION ====================
+console.log('🚀 [SERVER] Starting MedTestAI Backend Server...');
+console.log('=' .repeat(80));
 
-  async generateContent(prompt) {
-    if (!this.genAI) {
-      console.log('🤖 Using mock response - no API key');
-      return this.getMockResponse();
-    }
-
-    for (let i = 0; i < this.models.length; i++) {
-      try {
-        console.log(`🤖 Trying model: ${this.models[i]}`);
-        
-        const model = this.genAI.getGenerativeModel({
-          model: this.models[i],
-          generationConfig: {
-            temperature: 0.7,
-            topP: 0.8,
-            topK: 40,
-            maxOutputTokens: 4096,
-            responseMimeType: "application/json"
-          }
-        });
-
-        const enhancedPrompt = `
-You MUST respond with valid JSON only. No markdown, no explanations.
-
-Generate comprehensive healthcare test cases based on: ${prompt}
-
-Response format:
-{
-  "testCases": [
-    {
-      "testId": "TC001",
-      "testName": "Test Case Name", 
-      "description": "Detailed description",
-      "priority": "High",
-      "category": "authentication",
-      "testingTechnique": "boundary-value-analysis",
-      "riskLevel": "High",
-      "complianceRequirements": ["HIPAA Privacy Rule"],
-      "automationPotential": "High",
-      "preconditions": ["User logged in"],
-      "testSteps": ["Step 1", "Step 2"],
-      "expectedResults": ["Expected result"]
-    }
-  ],
-  "summary": {
-    "totalTestCases": 1,
-    "coverage": 100,
-    "highPriorityCount": 1,
-    "complianceFramework": "HIPAA"
-  }
-}`;
-
-        const result = await model.generateContent(enhancedPrompt);
-        const response = await result.response;
-        const text = response.text();
-        
-        console.log(`✅ Got response from ${this.models[i]}, length: ${text.length}`);
-        
-        // Try to parse JSON
-        const parsed = this.parseJSON(text);
-        if (parsed) {
-          console.log(`✅ Successfully parsed JSON with ${this.models[i]}`);
-          return parsed;
-        }
-        
-      } catch (error) {
-        console.error(`❌ Model ${this.models[i]} failed:`, error.message);
-        if (i === this.models.length - 1) {
-          console.log('🔄 All models failed, using mock response');
-          return this.getMockResponse();
-        }
-      }
-    }
-  }
-
-  parseJSON(text) {
-    // Strategy 1: Direct parsing
-    try {
-      return JSON.parse(text.trim());
-    } catch (e) {
-      console.log('📝 Direct parse failed, trying extraction...');
-    }
-
-    // Strategy 2: Extract from code blocks
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (codeBlockMatch) {
-      try {
-        return JSON.parse(codeBlockMatch[1].trim());
-      } catch (e) {
-        console.log('📝 Code block extraction failed...');
-      }
-    }
-
-    // Strategy 3: Find JSON object
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        let cleanJson = jsonMatch[0]
-          .replace(/,(\s*[}\]])/g, '$1')  // Remove trailing commas
-          .replace(/([{,]\s*)(\w+):/g, '$1"$2":')  // Quote keys
-          .replace(/:\s*'([^']*?)'/g, ': "$1"');   // Replace single quotes
-        
-        return JSON.parse(cleanJson);
-      } catch (e) {
-        console.log('📝 JSON repair failed...');
-      }
-    }
-
-    return null;
-  }
-
-  getMockResponse() {
-    return {
-      testCases: [
-        {
-          testId: "TC001",
-          testName: "Secure Healthcare Provider Authentication",
-          description: "Verify healthcare provider can authenticate securely with multi-factor authentication and proper session management",
-          priority: "High",
-          category: "authentication",
-          testingTechnique: "boundary-value-analysis",
-          riskLevel: "High",
-          complianceRequirements: ["HIPAA Security Rule", "Multi-Factor Authentication"],
-          automationPotential: "High",
-          preconditions: ["Valid provider credentials", "MFA device available", "Network connectivity"],
-          testSteps: [
-            "Navigate to login page",
-            "Enter valid username and password",
-            "Complete MFA verification",
-            "Verify successful authentication",
-            "Check session timeout configuration"
-          ],
-          expectedResults: [
-            "User authenticated successfully",
-            "Session established with proper timeout",
-            "Login event logged for audit trail",
-            "User redirected to authorized dashboard"
-          ]
-        },
-        {
-          testId: "TC002",
-          testName: "Patient Record Access Authorization",
-          description: "Ensure healthcare providers can only access patient records they are authorized to view",
-          priority: "High",
-          category: "authorization",
-          testingTechnique: "equivalence-partitioning",
-          riskLevel: "High",
-          complianceRequirements: ["HIPAA Privacy Rule", "Minimum Necessary Standard"],
-          automationPotential: "Medium",
-          preconditions: ["Provider authenticated", "Patient records exist", "Role-based permissions configured"],
-          testSteps: [
-            "Search for patient record",
-            "Verify access permissions based on provider role",
-            "Attempt to access unauthorized records",
-            "Display only authorized patient data",
-            "Log all access attempts"
-          ],
-          expectedResults: [
-            "Only authorized records are displayed",
-            "Unauthorized access attempts are blocked",
-            "Access attempts logged for audit",
-            "PHI protected according to minimum necessary principle"
-          ]
-        },
-        {
-          testId: "TC003",
-          testName: "Patient Data Encryption Validation",
-          description: "Verify that all patient health information is properly encrypted during transmission and storage",
-          priority: "High",
-          category: "security",
-          testingTechnique: "security-testing",
-          riskLevel: "Critical",
-          complianceRequirements: ["HIPAA Security Rule", "Data Encryption Requirements"],
-          automationPotential: "High",
-          preconditions: ["System configured with encryption", "Test patient data available"],
-          testSteps: [
-            "Transmit patient data over network",
-            "Verify TLS encryption is active",
-            "Check data storage encryption",
-            "Validate encryption key management",
-            "Test data integrity checks"
-          ],
-          expectedResults: [
-            "Data encrypted during transmission using TLS 1.2+",
-            "PHI encrypted at rest using AES-256",
-            "Encryption keys properly managed and rotated",
-            "Data integrity maintained throughout process"
-          ]
-        }
-      ],
-      summary: {
-        totalTestCases: 3,
-        coverage: 95,
-        highPriorityCount: 3,
-        complianceFramework: "HIPAA",
-        categoriesCount: {
-          authentication: 1,
-          authorization: 1,
-          security: 1
-        }
-      }
-    };
-  }
-}
-
-// Document AI Processing Service
-class HealthcareDocumentProcessor {
-  constructor() {
-    this.processorName = process.env.DOCUMENT_AI_PROCESSOR_NAME;
-  }
-
-  async processDocument(filePath, mimeType) {
-    if (!documentAI || !this.processorName) {
-      console.log('📄 Document AI not available - using basic text extraction');
-      return this.basicTextExtraction(filePath);
-    }
-
-    try {
-      console.log('📄 Processing document with Document AI...');
-      
-      const imageFile = fs.readFileSync(filePath);
-      const encodedImage = Buffer.from(imageFile).toString('base64');
-      
-      const request = {
-        name: this.processorName,
-        rawDocument: {
-          content: encodedImage,
-          mimeType: mimeType
-        },
-      };
-
-      const [result] = await documentAI.processDocument(request);
-      
-      return {
-        fullText: result.document.text,
-        formFields: this.extractFormFields(result.document),
-        entities: this.extractEntities(result.document),
-        processingMethod: 'Document AI'
-      };
-    } catch (error) {
-      console.error('Document AI processing failed:', error.message);
-      return this.basicTextExtraction(filePath);
-    }
-  }
-
-  basicTextExtraction(filePath) {
-    try {
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      return {
-        fullText: fileContent,
-        formFields: [],
-        entities: [],
-        processingMethod: 'Basic Text Extraction'
-      };
-    } catch (error) {
-      console.error('Basic text extraction failed:', error);
-      return {
-        fullText: '',
-        formFields: [],
-        entities: [],
-        processingMethod: 'Failed'
-      };
-    }
-  }
-
-  extractFormFields(document) {
-    const fields = [];
-    document.pages?.forEach(page => {
-      page.formFields?.forEach(field => {
-        const fieldName = this.getTextFromAnchor(field.fieldName?.textAnchor, document.text);
-        const fieldValue = this.getTextFromAnchor(field.fieldValue?.textAnchor, document.text);
-        
-        fields.push({
-          field: fieldName.trim(),
-          value: fieldValue.trim(),
-          confidence: field.fieldName?.confidence || 0
-        });
-      });
-    });
-    return fields;
-  }
-
-  extractEntities(document) {
-    const entities = [];
-    document.entities?.forEach(entity => {
-      entities.push({
-        type: entity.type,
-        mention: entity.mentionText,
-        confidence: entity.confidence
-      });
-    });
-    return entities;
-  }
-
-  getTextFromAnchor(textAnchor, fullText) {
-    if (!textAnchor?.textSegments?.length) return '';
-    const segment = textAnchor.textSegments[0];
-    return fullText.substring(segment.startIndex || 0, segment.endIndex);
-  }
-}
-
-// Cloud Storage Service
-class CloudStorageService {
-  async uploadDocument(filePath, fileName, metadata = {}) {
-    if (!bucket) {
-      console.log('☁️ Cloud Storage not available - using local storage');
-      return { 
-        fileName, 
-        url: `http://localhost:${PORT}/uploads/${fileName}`,
-        storage: 'local' 
-      };
-    }
-
-    try {
-      console.log('☁️ Uploading to Google Cloud Storage...');
-      
-      const destination = `healthcare-docs/${Date.now()}-${fileName}`;
-      
-      await bucket.upload(filePath, {
-        destination,
-        metadata: {
-          metadata: {
-            ...metadata,
-            uploadDate: new Date().toISOString(),
-            hipaaCompliant: 'true'
-          }
-        }
-      });
-
-      // Generate signed URL for secure access
-      const [url] = await bucket.file(destination).getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      });
-
-      return {
-        fileName: destination,
-        url,
-        storage: 'google-cloud'
-      };
-    } catch (error) {
-      console.error('Cloud Storage upload failed:', error.message);
-      return { 
-        fileName, 
-        url: `http://localhost:${PORT}/uploads/${fileName}`,
-        storage: 'local-fallback' 
-      };
-    }
-  }
-}
-
-// Initialize services
-const geminiService = new GeminiService();
-const documentProcessor = new HealthcareDocumentProcessor();
-const storageService = new CloudStorageService();
-
-// Enhanced document processing function
-async function processDocumentAdvanced(filePath, originalName, mimeType) {
+// Initialize services on startup
+(async () => {
   try {
-    console.log(`📄 Processing document: ${originalName}`);
+    console.log('📝 [SERVER] Initializing services...');
     
-    // Step 1: Process with Document AI or basic extraction
-    const documentData = await documentProcessor.processDocument(filePath, mimeType);
+    // Initialize test case generator
+    await testCaseGenerator.initialize();
     
-    // Step 2: Upload to cloud storage
-    const storageResult = await storageService.uploadDocument(filePath, originalName, {
-      documentType: 'healthcare-requirements',
-      processingMethod: documentData.processingMethod
-    });
+    // Initialize Google Sheets service
+    await googleSheetsService.initialize();
     
-    // Step 3: Extract requirements from processed text
-    const requirements = extractRequirements(documentData.fullText);
-    
-    return {
-      filename: originalName,
-      requirements,
-      documentType: path.extname(originalName).toLowerCase(),
-      processedAt: new Date().toISOString(),
-      processingMethod: documentData.processingMethod,
-      formFields: documentData.formFields,
-      entities: documentData.entities,
-      storageInfo: storageResult
-    };
+    console.log('✅ [SERVER] All services initialized successfully');
+    console.log('=' .repeat(80));
   } catch (error) {
-    console.error('Advanced document processing error:', error);
-    return {
-      filename: originalName,
-      requirements: [],
-      documentType: path.extname(originalName).toLowerCase(),
-      processedAt: new Date().toISOString(),
-      error: error.message
-    };
+    console.error('❌ [SERVER] Service initialization failed:', error);
+    console.error('=' .repeat(80));
   }
-}
+})();
 
-function extractRequirements(text) {
-  const requirements = [];
-  const lines = text.split('\n').filter(line => line.trim());
-  
-  lines.forEach((line, index) => {
-    if (line.length > 20 && (
-      line.toLowerCase().includes('shall') ||
-      line.toLowerCase().includes('must') ||
-      line.toLowerCase().includes('should') ||
-      line.toLowerCase().includes('requirement') ||
-      line.toLowerCase().includes('system') ||
-      line.toLowerCase().includes('user') ||
-      line.toLowerCase().includes('patient') ||
-      line.toLowerCase().includes('provider') ||
-      line.toLowerCase().includes('data') ||
-      line.toLowerCase().includes('security') ||
-      line.toLowerCase().includes('privacy')
-    )) {
-      requirements.push({
-        id: `REQ${String(index + 1).padStart(3, '0')}`,
-        text: line.trim(),
-        category: line.toLowerCase().includes('security') ? 'security' :
-                 line.toLowerCase().includes('patient') ? 'privacy' :
-                 line.toLowerCase().includes('auth') ? 'authentication' : 
-                 line.toLowerCase().includes('data') ? 'data-management' : 'functional',
-        risk: line.toLowerCase().includes('critical') || line.toLowerCase().includes('security') ? 'high' : 'medium'
-      });
-    }
-  });
-
-  return requirements.slice(0, 15); // Limit for demo
-}
-
-// API Routes
-
-// Health check with service status
+// ==================== HEALTH CHECK ====================
 app.get('/health', (req, res) => {
-  const services = ['Express Server'];
-  if (geminiService.genAI) services.push('Gemini AI');
-  if (documentAI) services.push('Document AI');
-  if (cloudStorage) services.push('Cloud Storage');
-  if (speechClient) services.push('Speech-to-Text');
-  
+  console.log('💓 [HEALTH] Health check request received');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    project: process.env.GOOGLE_CLOUD_PROJECT || 'pro-variety-472211-b9',
-    services: services
+    services: {
+      documentProcessor: 'ready',
+      testCaseGenerator: 'ready',
+      googleSheets: 'ready'
+    }
   });
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    geminiAvailable: !!geminiService.genAI,
-    documentAIAvailable: !!documentAI,
-    cloudStorageAvailable: !!cloudStorage,
-    speechAvailable: !!speechClient,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Enhanced workflow endpoint
-app.post('/api/workflow/complete', upload.single('document'), async (req, res) => {
+// ==================== DOCUMENT PROCESSING ====================
+app.post('/api/process-document', upload.single('document'), async (req, res) => {
+  const startTime = Date.now();
+  console.log('\n' + '='.repeat(80));
+  console.log('📄 [PROCESS] DOCUMENT PROCESSING REQUEST');
+  console.log('='.repeat(80));
+  console.log(`📄 [PROCESS] File: ${req.file?.originalname}`);
+  console.log(`📄 [PROCESS] Size: ${(req.file?.size / 1024).toFixed(2)} KB`);
+  
   try {
-    const { methodology = 'agile', complianceFramework = 'HIPAA' } = req.body;
-    
-    console.log(`🚀 Processing workflow: ${methodology} methodology, ${complianceFramework} compliance`);
-    
-    let extractedData;
-    let requirements = [];
-
-    // Process uploaded document
-    if (req.file) {
-      console.log(`📄 Processing uploaded file: ${req.file.originalname}`);
-      
-      const mimeType = req.file.mimetype || 'application/pdf';
-      extractedData = await processDocumentAdvanced(req.file.path, req.file.originalname, mimeType);
-      requirements = extractedData.requirements.map(req => req.text);
-      
-      // Clean up uploaded file
-      fs.unlinkSync(req.file.path);
-    } else {
-      // Use default requirements if no file uploaded
-      requirements = [
-        'User authentication must be secure and HIPAA compliant',
-        'Patient data must be encrypted during transmission and storage',
-        'System must provide audit logging for all PHI access',
-        'Role-based access control must be implemented',
-        'Data backup and recovery procedures must be tested',
-        'Patient consent must be obtained before data processing',
-        'System must support multi-factor authentication',
-        'Data retention policies must comply with healthcare regulations'
-      ];
-      
-      extractedData = {
-        filename: 'default-requirements.txt',
-        requirements: requirements.map((req, index) => ({
-          id: `REQ${String(index + 1).padStart(3, '0')}`,
-          text: req,
-          category: 'functional',
-          risk: 'medium'
-        })),
-        documentType: '.txt',
-        processedAt: new Date().toISOString(),
-        processingMethod: 'Default Dataset'
-      };
+    if (!req.file) {
+      throw new Error('No file uploaded');
     }
 
-    console.log(`📋 Found ${requirements.length} requirements`);
-
-    // Generate test cases using AI
-    const prompt = `Generate comprehensive healthcare test cases for ${methodology} methodology with ${complianceFramework} compliance. Requirements: ${requirements.join(', ')}`;
+    console.log('📝 [PROCESS] Reading file buffer...');
+    const fileBuffer = await fs.readFile(req.file.path);
     
-    const aiResponse = await geminiService.generateContent(prompt);
-    
-    console.log(`🧪 Generated ${aiResponse.testCases?.length || 0} test cases`);
+    console.log('🤖 [PROCESS] Processing with Document AI...');
+    const result = await documentProcessor.processDocument(
+      fileBuffer,
+      req.file.originalname,
+      req.file.mimetype
+    );
 
+    // Clean up uploaded file
+    await fs.remove(req.file.path);
+    
+    const duration = Date.now() - startTime;
+    console.log(`✅ [PROCESS] Document processing complete in ${duration}ms`);
+    console.log('='.repeat(80) + '\n');
+    
     res.json({
       success: true,
-      methodology,
-      complianceFramework,
-      extractedData,
-      testCases: aiResponse,
-      processedAt: new Date().toISOString(),
-      serviceStatus: {
-        documentAI: !!documentAI,
-        cloudStorage: !!cloudStorage,
-        geminiAI: !!geminiService.genAI
-      }
+      extractedText: result.text,
+      pages: result.pages,
+      processingTime: duration
     });
-
-  } catch (error) {
-    console.error('❌ Workflow error:', error);
     
-    // Clean up file on error
-    if (req.file?.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (e) {
-        console.error('File cleanup error:', e);
-      }
-    }
-
+  } catch (error) {
+    console.error('❌ [PROCESS] Document processing failed:', error);
+    console.error('='.repeat(80) + '\n');
+    
     res.status(500).json({
       success: false,
       error: error.message
@@ -636,58 +117,113 @@ app.post('/api/workflow/complete', upload.single('document'), async (req, res) =
   }
 });
 
-// Enhanced export endpoint
-app.post('/api/tests/export', (req, res) => {
+// ==================== TEST CASE GENERATION ====================
+app.post('/api/generate-tests', async (req, res) => {
+  const startTime = Date.now();
+  console.log('\n' + '='.repeat(80));
+  console.log('🧪 [GENERATE] TEST CASE GENERATION REQUEST');
+  console.log('='.repeat(80));
+  
   try {
-    const { testCases = [], format = 'csv' } = req.body;
+    const { requirements, methodology, compliance } = req.body;
     
-    console.log(`Exporting ${testCases.length} test cases as ${format}`);
+    console.log(`📋 [GENERATE] Requirements: ${requirements?.length || 0}`);
+    console.log(`🔧 [GENERATE] Methodology: ${methodology || 'agile'}`);
+    console.log(`🔒 [GENERATE] Compliance: ${compliance || 'HIPAA'}`);
     
-    let exportData, filename, mimeType;
-    const timestamp = new Date().toISOString().split('T')[0];
-    
-    if (format.toLowerCase() === 'csv') {
-      // FULL CSV with all 12 columns
-      const csvHeaders = [
-        'Test ID', 'Test Name', 'Category', 'Priority', 'Description', 
-        'Testing Technique', 'Risk Level', 'Compliance Requirements', 
-        'Automation Potential', 'Preconditions', 'Test Steps', 'Expected Results'
-      ];
-      
-      const csvRows = testCases.map(test => [
-        test.testId || `TC${Math.floor(Math.random() * 1000)}`,
-        test.testName || 'Generated Test Case',
-        test.category || 'functional',
-        test.priority || 'Medium',
-        (test.description || 'AI-generated healthcare test case').replace(/"/g, '""'),
-        test.testingTechnique || 'functional-testing',
-        test.riskLevel || 'Medium',
-        (test.complianceRequirements || ['HIPAA']).join('; '),
-        test.automationPotential || 'Medium',
-        (test.preconditions || ['System operational']).join('; '),
-        (test.testSteps || ['Execute test procedure']).join('; '),
-        (test.expectedResults || ['System functions as expected']).join('; ')
-      ]);
-      
-      exportData = [csvHeaders, ...csvRows]
-        .map(row => row.map(cell => `"${cell}"`).join(','))
-        .join('\n');
-      
-      filename = `medtestai-testcases-comprehensive-${timestamp}.csv`;
-      mimeType = 'text/csv';
+    if (!requirements || requirements.length === 0) {
+      throw new Error('No requirements provided');
     }
 
+    const testCases = await testCaseGenerator.generateTestCases(
+      requirements,
+      methodology || 'agile',
+      compliance || 'HIPAA'
+    );
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [GENERATE] Generated ${testCases.testCases?.length || 0} test cases in ${duration}ms`);
+    console.log('='.repeat(80) + '\n');
+    
+    res.json({
+      success: true,
+      testCases,
+      processingTime: duration
+    });
+    
+  } catch (error) {
+    console.error('❌ [GENERATE] Test generation failed:', error);
+    console.error('='.repeat(80) + '\n');
+    
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ==================== EXPORT ENDPOINTS ====================
+
+// CSV Export
+app.post('/api/tests/export', async (req, res) => {
+  console.log('\n' + '='.repeat(80));
+  console.log('📤 [EXPORT] EXPORT REQUEST');
+  console.log('='.repeat(80));
+  
+  try {
+    const { testCases, format, methodology, compliance } = req.body;
+    
+    console.log(`📊 [EXPORT] Format: ${format || 'csv'}`);
+    console.log(`📊 [EXPORT] Test cases: ${testCases?.testCases?.length || 0}`);
+    
+    if (!testCases || !testCases.testCases) {
+      throw new Error('No test cases provided');
+    }
+
+    let exportData, mimeType, filename;
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    switch (format?.toLowerCase()) {
+      case 'csv':
+        console.log('📊 [EXPORT] Generating CSV...');
+        exportData = generateCSV(testCases.testCases);
+        mimeType = 'text/csv';
+        filename = `medtestai-tests-${timestamp}.csv`;
+        break;
+        
+      case 'json':
+        console.log('📊 [EXPORT] Generating JSON...');
+        exportData = JSON.stringify(testCases, null, 2);
+        mimeType = 'application/json';
+        filename = `medtestai-tests-${timestamp}.json`;
+        break;
+        
+      case 'excel':
+        console.log('📊 [EXPORT] Generating Excel...');
+        exportData = generateExcel(testCases.testCases);
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        filename = `medtestai-tests-${timestamp}.xlsx`;
+        break;
+        
+      default:
+        throw new Error(`Unsupported format: ${format}`);
+    }
+
+    console.log(`✅ [EXPORT] Export generated: ${filename}`);
+    console.log('='.repeat(80) + '\n');
+    
     res.json({
       success: true,
       data: exportData,
-      filename,
       mimeType,
-      exportedCount: testCases.length,
-      format
+      filename,
+      exportedCount: testCases.testCases.length
     });
-
+    
   } catch (error) {
-    console.error('Export error:', error);
+    console.error('❌ [EXPORT] Export failed:', error);
+    console.error('='.repeat(80) + '\n');
+    
     res.status(500).json({
       success: false,
       error: error.message
@@ -695,45 +231,81 @@ app.post('/api/tests/export', (req, res) => {
   }
 });
 
-// Audio transcription endpoint (Speech-to-Text)
-app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
-  if (!speechClient) {
-    return res.status(503).json({
-      success: false,
-      error: 'Speech-to-Text service not available'
-    });
-  }
-
+// ==================== GOOGLE SHEETS EXPORT ====================
+app.post('/api/v1/export/google-sheets', async (req, res) => {
+  console.log('\n' + '='.repeat(80));
+  console.log('📊 [GOOGLE SHEETS] EXPORT REQUEST');
+  console.log('='.repeat(80));
+  
   try {
-    const audioBytes = fs.readFileSync(req.file.path).toString('base64');
+    const { testCases, methodology, compliance } = req.body;
     
-    const request = {
-      audio: { content: audioBytes },
-      config: {
-        encoding: 'WEBM_OPUS',
-        sampleRateHertz: 16000,
-        languageCode: 'en-US',
-        model: 'medical_conversation',
-        useEnhanced: true,
-      },
-    };
+    console.log(`📊 [GOOGLE SHEETS] Test cases count: ${testCases?.length || 0}`);
+    console.log(`🔧 [GOOGLE SHEETS] Methodology: ${methodology || 'agile'}`);
+    console.log(`🔒 [GOOGLE SHEETS] Compliance: ${compliance || 'HIPAA'}`);
     
-    const [response] = await speechClient.recognize(request);
-    const transcript = response.results
-      .map(result => result.alternatives[0].transcript)
-      .join('\n');
+    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+      console.log('⚠️  [GOOGLE SHEETS] No test cases provided');
+      return res.status(400).json({
+        success: false,
+        error: 'No test cases to export'
+      });
+    }
+
+    console.log('📝 [GOOGLE SHEETS] Step 1: Calling Google Sheets service...');
+    const result = await googleSheetsService.exportTestCases(testCases);
     
-    // Clean up audio file
-    fs.unlinkSync(req.file.path);
+    console.log('✅ [GOOGLE SHEETS] Step 2: Export successful!');
+    console.log(`📊 [GOOGLE SHEETS] Updated rows: ${result.updatedRows}`);
+    console.log(`🔗 [GOOGLE SHEETS] Sheet URL: ${result.sheetUrl}`);
+    console.log('='.repeat(80) + '\n');
     
     res.json({
       success: true,
-      transcript,
-      confidence: response.results[0]?.alternatives[0]?.confidence || 0
+      message: `Exported ${testCases.length} test cases to Google Sheets`,
+      sheetUrl: result.sheetUrl,
+      updatedRows: result.updatedRows,
+      spreadsheetId: googleSheetsService.spreadsheetId
     });
     
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('❌ [GOOGLE SHEETS] Export failed:', error);
+    console.error('❌ [GOOGLE SHEETS] Error details:', error.stack);
+    console.error('='.repeat(80) + '\n');
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to export to Google Sheets',
+      details: error.message
+    });
+  }
+});
+
+// Create new Google Sheet
+app.post('/api/v1/export/create-sheet', async (req, res) => {
+  console.log('\n' + '='.repeat(80));
+  console.log('📊 [GOOGLE SHEETS] CREATE NEW SHEET REQUEST');
+  console.log('='.repeat(80));
+  
+  try {
+    console.log('📝 [GOOGLE SHEETS] Creating new spreadsheet...');
+    const result = await googleSheetsService.createTestManagementSheet();
+    
+    console.log(`✅ [GOOGLE SHEETS] New sheet created!`);
+    console.log(`🔗 [GOOGLE SHEETS] Sheet URL: ${result.url}`);
+    console.log(`📋 [GOOGLE SHEETS] Sheet ID: ${result.spreadsheetId}`);
+    console.log('='.repeat(80) + '\n');
+    
+    res.json({
+      success: true,
+      spreadsheetId: result.spreadsheetId,
+      url: result.url
+    });
+    
+  } catch (error) {
+    console.error('❌ [GOOGLE SHEETS] Sheet creation failed:', error);
+    console.error('='.repeat(80) + '\n');
+    
     res.status(500).json({
       success: false,
       error: error.message
@@ -741,16 +313,71 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Start server
+// ==================== HELPER FUNCTIONS ====================
+
+function generateCSV(testCases) {
+  console.log('📝 [CSV] Generating CSV data...');
+  
+  const headers = [
+    'Test ID', 'Test Name', 'Category', 'Priority', 'Description',
+    'Preconditions', 'Test Steps', 'Expected Results', 'Compliance Requirements'
+  ];
+  
+  const rows = testCases.map(tc => [
+    tc.testId || '',
+    tc.testName || '',
+    tc.category || '',
+    tc.priority || '',
+    tc.description || '',
+    Array.isArray(tc.preconditions) ? tc.preconditions.join('; ') : '',
+    Array.isArray(tc.testSteps) ? tc.testSteps.map((s, i) => `${i + 1}. ${s.action || s}`).join(' | ') : '',
+    Array.isArray(tc.expectedResults) ? tc.expectedResults.join('; ') : tc.expectedResult || '',
+    Array.isArray(tc.complianceRequirements) ? tc.complianceRequirements.join('; ') : ''
+  ]);
+  
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+  ].join('\n');
+  
+  console.log(`✅ [CSV] Generated ${rows.length} rows`);
+  return csvContent;
+}
+
+function generateExcel(testCases) {
+  console.log('📝 [EXCEL] Generating Excel data...');
+  // Simplified Excel generation - you can enhance this with a library like xlsx
+  return generateCSV(testCases);
+}
+
+// ==================== ERROR HANDLING ====================
+app.use((err, req, res, next) => {
+  console.error('❌ [ERROR] Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: err.message
+  });
+});
+
+// ==================== START SERVER ====================
 app.listen(PORT, () => {
-  console.log(`🚀 MedTestAI Backend running on http://localhost:${PORT}`);
-  console.log(`🔗 Frontend should connect to: http://localhost:${PORT}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-  console.log(`🤖 Gemini AI: ${geminiService.genAI ? 'READY ✅' : 'MOCK MODE ⚠️'}`);
-  console.log(`📄 Document AI: ${documentAI ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
-  console.log(`☁️ Cloud Storage: ${cloudStorage ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
-  console.log(`🎤 Speech-to-Text: ${speechClient ? 'READY ✅' : 'NOT CONFIGURED ⚠️'}`);
-  console.log(`📋 Ready for healthcare test generation!`);
+  console.log('\n' + '='.repeat(80));
+  console.log('🚀 [SERVER] MEDTESTAI BACKEND SERVER STARTED');
+  console.log('='.repeat(80));
+  console.log(`✅ [SERVER] Server running on port ${PORT}`);
+  console.log(`🌐 [SERVER] API URL: http://localhost:${PORT}`);
+  console.log(`📊 [SERVER] Google Sheets: ${googleSheetsService.spreadsheetId ? 'Configured' : 'Not Configured'}`);
+  console.log(`🔒 [SERVER] Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('='.repeat(80));
+  console.log('\n📝 [SERVER] Available Endpoints:');
+  console.log('   GET  /health                          - Health check');
+  console.log('   POST /api/process-document            - Process healthcare documents');
+  console.log('   POST /api/generate-tests              - Generate test cases');
+  console.log('   POST /api/tests/export                - Export (CSV/JSON/Excel)');
+  console.log('   POST /api/v1/export/google-sheets     - Export to Google Sheets');
+  console.log('   POST /api/v1/export/create-sheet      - Create new Google Sheet');
+  console.log('='.repeat(80) + '\n');
 });
 
 export default app;
