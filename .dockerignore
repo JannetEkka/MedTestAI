@@ -1,15 +1,40 @@
+# Node modules
 node_modules
 npm-debug.log
+
+# Frontend directory (don't include in backend build)
+frontend/
+build/
+public/
+src/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Git
 .git
 .gitignore
+
+# IDE
+.vscode
+.idea
+
+# Test files
+*.test.js
+coverage/
+
+# Documentation
 README.md
-.env
-.env.*
-.nyc_output
-coverage
-.env.example
-ml/venv
+docs/
+
+# Logs
+logs
 *.log
-logs/
-secrets/
-data/
+
+# Uploads (will be created at runtime)
+uploads/*
+
+# Temporary files
+*.tmp
+.DS_Store

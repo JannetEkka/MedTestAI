@@ -1,497 +1,246 @@
-// src/services/ai/geminiService.js
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// services/geminiService.js - UPDATED FOR VERTEX AI
+import { VertexAI } from '@google-cloud/vertexai';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 class GeminiService {
   constructor() {
-    this.genAI = process.env.GEMINI_API_KEY 
-      ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-      : null;
+    this.vertex = null;
     this.model = null;
-  }
-
-  initialize() {
-    if (!this.genAI) {
-      console.warn('⚠️ Gemini API key not configured');
-      return false;
-    }
-    
-    this.model = this.genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 8192,
-        responseMimeType: "application/json"
-      }
-    });
-    
-    console.log('✅ Gemini AI service initialized');
-    return true;
-  }
-
-  async generateTestCases(requirements, methodology = 'agile', compliance = 'HIPAA') {
-    if (!this.model) {
-      throw new Error('Gemini model not initialized');
-    }
-
-    const prompt = `
-    Generate comprehensive healthcare software test cases based on these requirements.
-    
-    Requirements: ${JSON.stringify(requirements)}
-    Methodology: ${methodology}
-    Compliance Framework: ${compliance}
-    
-    Return a JSON object with this exact structure:
-    {
-      "testCases": [
-        {
-          "testId": "TC001",
-          "testName": "string",
-          "description": "string",
-          "priority": "High|Medium|Low",
-          "category": "functional|security|performance|usability",
-          "testingTechnique": "boundary-value|equivalence-partitioning|decision-table",
-          "riskLevel": "High|Medium|Low",
-          "complianceRequirements": ["array of requirements"],
-          "automationPotential": "High|Medium|Low",
-          "preconditions": ["array of preconditions"],
-          "testSteps": ["array of steps"],
-          "expectedResults": ["array of expected results"],
-          "actualResults": "",
-          "status": "Not Started",
-          "requirementId": "string"
-        }
-      ],
-      "summary": {
-        "totalTestCases": number,
-        "coverage": number,
-        "highPriorityCount": number,
-        "complianceFramework": "${compliance}",
-        "categoriesCount": {
-          "functional": number,
-          "security": number,
-          "performance": number,
-          "usability": number
-        }
-      }
-    }`;
-
-    try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      
-      // Parse and validate JSON response
-      const testData = JSON.parse(text);
-      
-      // Add metadata
-      testData.generatedAt = new Date().toISOString();
-      testData.methodology = methodology;
-      testData.aiModel = 'gemini-1.5-flash';
-      
-      return testData;
-    } catch (error) {
-      console.error('Test generation error:', error);
-      throw new Error(`Failed to generate test cases: ${error.message}`);
-    }
-  }
-
-  async analyzeRequirements(text) {
-    if (!this.model) {
-      throw new Error('Gemini model not initialized');
-    }
-
-    const prompt = `
-    Analyze this healthcare software requirement document and extract structured requirements.
-    
-    Document: ${text}
-    
-    Return JSON with:
-    {
-      "requirements": [
-        {
-          "id": "REQ001",
-          "text": "requirement text",
-          "category": "functional|non-functional|security|compliance",
-          "priority": "critical|high|medium|low",
-          "testable": true|false,
-          "acceptanceCriteria": ["array of criteria"],
-          "dependencies": ["array of requirement IDs"],
-          "complianceMapping": ["HIPAA sections or other compliance requirements"]
-        }
-      ],
-      "documentSummary": {
-        "totalRequirements": number,
-        "categories": {
-          "functional": number,
-          "nonFunctional": number,
-          "security": number,
-          "compliance": number
-        },
-        "testabilityScore": number (0-100),
-        "complianceFrameworks": ["detected frameworks"]
-      }
-    }`;
-
-    const result = await this.model.generateContent(prompt);
-    return JSON.parse(result.response.text());
-  }
-}
-
-// src/services/healthcare/documentAIService.js
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
-import { Storage } from '@google-cloud/storage';
-
-class DocumentAIService {
-  constructor() {
-    this.client = null;
-    this.storage = null;
-    this.processorPath = null;
+    this.isInitialized = false;
   }
 
   async initialize() {
-    try {
-      this.client = new DocumentProcessorServiceClient({
-        apiEndpoint: 'us-documentai.googleapis.com'
-      });
-      
-      this.storage = new Storage({
-        projectId: process.env.GOOGLE_CLOUD_PROJECT
-      });
+    if (this.isInitialized) {
+      return true;
+    }
 
-      // Healthcare Document Form Parser
-      this.processorPath = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/locations/us/processors/${process.env.DOCUMENT_AI_PROCESSOR_ID}`;
+    try {
+      console.log('🤖 [Vertex AI] Initializing Vertex AI service...');
       
-      console.log('✅ Document AI service initialized');
+      // Initialize Vertex AI with ADC (Application Default Credentials)
+      this.vertex = new VertexAI({
+        project: process.env.GOOGLE_CLOUD_PROJECT || 'pro-variety-472211-b9',
+        location: 'us-central1'
+      });
+      
+      console.log('✅ [Vertex AI] Project:', process.env.GOOGLE_CLOUD_PROJECT);
+      console.log('✅ [Vertex AI] Location: us-central1');
+      
+      // Use Gemini 2.5 Flash (current stable model)
+      this.model = this.vertex.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192
+        }
+      });
+      
+      this.isInitialized = true;
+      console.log('✅ [Vertex AI] Gemini service initialized successfully');
+      console.log('✅ [Vertex AI] Using model: gemini-2.5-flash');
       return true;
     } catch (error) {
-      console.error('❌ Document AI initialization failed:', error);
+      console.error('❌ [Vertex AI] Initialization failed:', error.message);
+      console.error('❌ [Vertex AI] Make sure:');
+      console.error('   1. GOOGLE_APPLICATION_CREDENTIALS is set');
+      console.error('   2. Service account has "AI Platform User" role');
+      console.error('   3. Vertex AI API is enabled');
       return false;
     }
   }
 
-  async processHealthcareDocument(filePath, mimeType) {
-    if (!this.client) {
-      throw new Error('Document AI client not initialized');
+  /**
+   * CRITICAL: Clean and validate JSON response from Gemini
+   * Handles markdown code blocks, HTML, and other non-JSON content
+   */
+  cleanJsonResponse(text) {
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid response: empty or non-string');
     }
 
-    const fs = require('fs').promises;
-    const fileContent = await fs.readFile(filePath);
+    let cleaned = text.trim();
     
-    const request = {
-      name: this.processorPath,
-      rawDocument: {
-        content: fileContent.toString('base64'),
-        mimeType: mimeType
-      },
-      processOptions: {
-        fromStart: true,
-        ocr: {
-          enableNativePdfParsing: true,
-          enableImageQualityScores: true,
-          enableSymbolRecognition: true
-        }
-      }
-    };
+    // Remove markdown code blocks (```json ... ```)
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+    
+    // Remove HTML/DOCTYPE if present (error responses)
+    if (cleaned.includes('<!DOCTYPE') || cleaned.includes('<html')) {
+      throw new Error('Received HTML error page instead of JSON');
+    }
+    
+    // Remove any leading/trailing whitespace
+    cleaned = cleaned.trim();
+    
+    // Validate it starts with { or [
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      console.error('Invalid JSON start:', cleaned.substring(0, 100));
+      throw new Error('Response does not start with valid JSON');
+    }
+    
+    return cleaned;
+  }
 
+  /**
+   * Generate test cases with robust error handling
+   */
+  async generateTestCases(requirements, methodology = 'agile', complianceFrameworks = []) {
+    console.log('🤖 [Vertex AI] Starting test case generation');
+    console.log(`📋 [Vertex AI] Requirements: ${requirements.length}`);
+    console.log(`🔧 [Vertex AI] Methodology: ${methodology}`);
+    console.log(`🛡️ [Vertex AI] Compliance: ${complianceFrameworks.join(', ')}`);
+
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (!this.model) {
+      throw new Error('Vertex AI service not initialized. Check authentication and API enablement.');
+    }
+
+    // Build comprehensive prompt
+    const prompt = this.buildPrompt(requirements, methodology, complianceFrameworks);
+    
     try {
-      const [result] = await this.client.processDocument(request);
+      console.log('📤 [Vertex AI] Sending request to Vertex AI...');
+      const startTime = Date.now();
       
-      return {
-        text: result.document.text,
-        entities: this.extractHealthcareEntities(result.document),
-        formFields: this.extractFormFields(result.document),
-        tables: this.extractTables(result.document),
-        confidence: result.document.confidence || 0,
-        pages: result.document.pages?.length || 0
-      };
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const rawText = response.text();
+      
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Vertex AI] Response received in ${duration}ms`);
+      console.log(`📊 [Vertex AI] Response length: ${rawText.length} characters`);
+      
+      // CRITICAL: Clean and parse the response
+      try {
+        const cleanedText = this.cleanJsonResponse(rawText);
+        const parsed = JSON.parse(cleanedText);
+        
+        // Validate response structure
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Parsed response is not an object');
+        }
+        
+        if (!parsed.testCases || !Array.isArray(parsed.testCases)) {
+          throw new Error('Response missing testCases array');
+        }
+        
+        console.log(`✅ [Vertex AI] Successfully parsed ${parsed.testCases.length} test cases`);
+        
+        return {
+          success: true,
+          testCases: parsed.testCases,
+          metadata: parsed.metadata || {},
+          summary: parsed.summary || {}
+        };
+        
+      } catch (parseError) {
+        console.error('❌ [Vertex AI] JSON parsing failed:', parseError.message);
+        console.error('Raw response (first 500 chars):', rawText.substring(0, 500));
+        
+        throw new Error(`Failed to parse Vertex AI response: ${parseError.message}. Please try again.`);
+      }
+      
     } catch (error) {
-      console.error('Document processing error:', error);
-      throw error;
-    }
-  }
-
-  extractHealthcareEntities(document) {
-    const entities = [];
-    
-    if (document.entities) {
-      for (const entity of document.entities) {
-        // Healthcare-specific entity types
-        const healthcareTypes = [
-          'patient_name', 'dob', 'mrn', 'diagnosis', 
-          'medication', 'procedure', 'provider', 
-          'insurance', 'allergies', 'vitals'
-        ];
-        
-        if (healthcareTypes.includes(entity.type) || entity.type.includes('medical')) {
-          entities.push({
-            type: entity.type,
-            text: entity.textAnchor?.content || entity.mentionText,
-            confidence: entity.confidence,
-            properties: entity.properties || [],
-            redacted: this.shouldRedactPHI(entity.type)
-          });
-        }
+      console.error('❌ [Vertex AI] Generation failed:', error);
+      
+      // Provide helpful error messages
+      if (error.message?.includes('quota')) {
+        throw new Error('Vertex AI quota exceeded. Please check your project quota limits.');
+      } else if (error.message?.includes('permission') || error.message?.includes('PERMISSION_DENIED')) {
+        throw new Error('Permission denied. Ensure service account has "AI Platform User" role.');
+      } else if (error.message?.includes('API key')) {
+        throw new Error('Vertex AI does not use API keys. Using Application Default Credentials.');
+      } else {
+        throw new Error(`Vertex AI error: ${error.message}`);
       }
     }
-    
-    return entities;
   }
 
-  extractFormFields(document) {
-    const fields = [];
-    
-    if (document.pages) {
-      for (const page of document.pages) {
-        if (page.formFields) {
-          for (const field of page.formFields) {
-            fields.push({
-              name: field.fieldName?.textAnchor?.content || '',
-              value: field.fieldValue?.textAnchor?.content || '',
-              confidence: field.confidence || 0,
-              type: field.valueType || 'text'
-            });
-          }
+  /**
+   * Build comprehensive prompt for healthcare test case generation
+   */
+  buildPrompt(requirements, methodology, complianceFrameworks) {
+    const complianceText = complianceFrameworks.length > 0 
+      ? complianceFrameworks.join(', ') 
+      : 'HIPAA';
+
+    return `You are an expert healthcare QA engineer. Generate comprehensive test cases for the following requirements.
+
+**CRITICAL INSTRUCTIONS:**
+1. Return ONLY valid JSON - no markdown, no explanations, no code blocks
+2. Follow the exact structure specified below
+3. Each test case must have all required fields
+4. Make test cases specific and actionable
+
+**Requirements:**
+${requirements.map((req, i) => `${i + 1}. ${typeof req === 'object' ? req.text : req}`).join('\n')}
+
+**Testing Methodology:** ${methodology}
+**Compliance Frameworks:** ${complianceText}
+
+**Required JSON Structure:**
+{
+  "testCases": [
+    {
+      "id": "TC_XXX_001",
+      "title": "Clear, action-oriented test title",
+      "description": "Detailed test description",
+      "priority": "HIGH|MEDIUM|LOW",
+      "category": "Functional|Security|Performance|Compliance|UI/UX",
+      "riskLevel": "HIGH|MEDIUM|LOW",
+      "estimatedTime": "15 minutes",
+      "preconditions": ["Precondition 1", "Precondition 2"],
+      "testSteps": [
+        {
+          "step": 1,
+          "action": "Specific action to perform",
+          "expectedResult": "Expected outcome"
         }
-      }
+      ],
+      "testData": {
+        "inputs": ["Sample data 1", "Sample data 2"],
+        "expectedOutputs": ["Expected result 1"]
+      },
+      "complianceRequirements": ["${complianceText} requirement"],
+      "automationPotential": "High|Medium|Low",
+      "tags": ["tag1", "tag2"]
     }
-    
-    return fields;
-  }
-
-  extractTables(document) {
-    const tables = [];
-    
-    if (document.pages) {
-      for (const page of document.pages) {
-        if (page.tables) {
-          for (const table of page.tables) {
-            const extractedTable = {
-              rows: [],
-              headers: []
-            };
-            
-            if (table.headerRows) {
-              extractedTable.headers = table.headerRows.map(row =>
-                row.cells.map(cell => cell.textAnchor?.content || '')
-              );
-            }
-            
-            if (table.bodyRows) {
-              extractedTable.rows = table.bodyRows.map(row =>
-                row.cells.map(cell => cell.textAnchor?.content || '')
-              );
-            }
-            
-            tables.push(extractedTable);
-          }
-        }
-      }
-    }
-    
-    return tables;
-  }
-
-  shouldRedactPHI(entityType) {
-    const phiTypes = [
-      'patient_name', 'ssn', 'mrn', 'dob', 
-      'address', 'phone', 'email', 'insurance_id'
-    ];
-    return phiTypes.includes(entityType.toLowerCase());
+  ],
+  "metadata": {
+    "totalTests": 0,
+    "methodology": "${methodology}",
+    "complianceFrameworks": ${JSON.stringify(complianceFrameworks)},
+    "generatedAt": "${new Date().toISOString()}"
+  },
+  "summary": {
+    "byPriority": {"HIGH": 0, "MEDIUM": 0, "LOW": 0},
+    "byCategory": {},
+    "byRiskLevel": {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
   }
 }
 
-// src/services/healthcare/complianceEngine.js
-class ComplianceEngine {
-  constructor() {
-    this.frameworks = {
-      HIPAA: {
-        privacy: [
-          'Minimum necessary standard',
-          'Patient consent requirements',
-          'De-identification standards',
-          'Breach notification requirements'
-        ],
-        security: [
-          'Access controls',
-          'Audit logging',
-          'Encryption requirements',
-          'Transmission security'
-        ]
-      },
-      FDA: {
-        '21_CFR_Part_11': [
-          'Electronic signatures',
-          'Audit trails',
-          'System validation',
-          'Record retention'
-        ]
-      },
-      GDPR: {
-        rights: [
-          'Right to access',
-          'Right to rectification',
-          'Right to erasure',
-          'Data portability'
-        ]
-      }
-    };
-  }
+Generate test cases that:
+- Cover all requirements completely
+- Include security, compliance, and edge cases
+- Are specific to healthcare context
+- Follow ${methodology} methodology
+- Address ${complianceText} compliance
+- Are realistic and executable
 
-  applyComplianceRules(testCases, framework = 'HIPAA') {
-    const rules = this.frameworks[framework];
-    if (!rules) {
-      console.warn(`Unknown compliance framework: ${framework}`);
-      return testCases;
-    }
-
-    // Add compliance-specific test cases
-    const complianceTests = [];
-    
-    // Add security test cases
-    if (rules.security) {
-      rules.security.forEach((rule, index) => {
-        complianceTests.push({
-          testId: `CT-SEC-${String(index + 1).padStart(3, '0')}`,
-          testName: `Compliance Test: ${rule}`,
-          description: `Verify system compliance with ${framework} ${rule}`,
-          priority: 'High',
-          category: 'compliance',
-          testingTechnique: 'compliance-validation',
-          riskLevel: 'High',
-          complianceRequirements: [`${framework} - ${rule}`],
-          automationPotential: 'Medium',
-          preconditions: ['System configured for ' + framework],
-          testSteps: this.generateComplianceTestSteps(rule, framework),
-          expectedResults: [`System complies with ${framework} ${rule}`],
-          requirementId: 'COMPLIANCE-' + framework
-        });
-      });
-    }
-
-    // Add privacy test cases
-    if (rules.privacy) {
-      rules.privacy.forEach((rule, index) => {
-        complianceTests.push({
-          testId: `CT-PRIV-${String(index + 1).padStart(3, '0')}`,
-          testName: `Privacy Test: ${rule}`,
-          description: `Verify privacy compliance with ${framework} ${rule}`,
-          priority: 'High',
-          category: 'privacy',
-          testingTechnique: 'privacy-validation',
-          riskLevel: 'High',
-          complianceRequirements: [`${framework} - ${rule}`],
-          automationPotential: 'Low',
-          preconditions: ['PHI data available for testing'],
-          testSteps: this.generatePrivacyTestSteps(rule, framework),
-          expectedResults: [`Privacy protected per ${framework} ${rule}`],
-          requirementId: 'PRIVACY-' + framework
-        });
-      });
-    }
-
-    // Merge with existing test cases
-    return {
-      ...testCases,
-      testCases: [...(testCases.testCases || []), ...complianceTests],
-      complianceValidation: {
-        framework,
-        rulesApplied: Object.keys(rules).flatMap(key => rules[key]),
-        additionalTestsAdded: complianceTests.length,
-        validatedAt: new Date().toISOString()
-      }
-    };
-  }
-
-  generateComplianceTestSteps(rule, framework) {
-    const steps = {
-      'Access controls': [
-        'Attempt unauthorized access to PHI',
-        'Verify access is denied',
-        'Login with authorized credentials',
-        'Verify access is granted with appropriate permissions',
-        'Check audit log for access attempts'
-      ],
-      'Audit logging': [
-        'Perform various system actions',
-        'Access audit log interface',
-        'Verify all actions are logged',
-        'Check log integrity and immutability',
-        'Verify log retention meets requirements'
-      ],
-      'Encryption requirements': [
-        'Inspect data at rest encryption',
-        'Verify encryption algorithms meet standards',
-        'Test data transmission security',
-        'Validate key management procedures',
-        'Check encryption for backups'
-      ]
-    };
-    
-    return steps[rule] || ['Verify ' + rule + ' implementation'];
-  }
-
-  generatePrivacyTestSteps(rule, framework) {
-    const steps = {
-      'Minimum necessary standard': [
-        'Access PHI with different user roles',
-        'Verify each role sees only necessary data',
-        'Test data filtering mechanisms',
-        'Validate role-based access controls',
-        'Document data exposure per role'
-      ],
-      'Patient consent requirements': [
-        'Access consent management interface',
-        'Test consent capture workflow',
-        'Verify consent validation before data access',
-        'Test consent withdrawal process',
-        'Validate consent audit trail'
-      ]
-    };
-    
-    return steps[rule] || ['Verify ' + rule + ' compliance'];
-  }
-
-  validateTestCoverage(testCases, requirements) {
-    const coverage = {
-      totalRequirements: requirements.length,
-      coveredRequirements: 0,
-      uncoveredRequirements: [],
-      coveragePercentage: 0,
-      complianceGaps: []
-    };
-
-    const coveredReqs = new Set();
-    
-    testCases.forEach(test => {
-      if (test.requirementId) {
-        coveredReqs.add(test.requirementId);
-      }
-    });
-
-    coverage.coveredRequirements = coveredReqs.size;
-    coverage.coveragePercentage = Math.round(
-      (coverage.coveredRequirements / coverage.totalRequirements) * 100
-    );
-
-    requirements.forEach(req => {
-      if (!coveredReqs.has(req.id)) {
-        coverage.uncoveredRequirements.push(req.id);
-        
-        if (req.category === 'compliance' || req.category === 'security') {
-          coverage.complianceGaps.push({
-            requirementId: req.id,
-            description: req.text,
-            risk: 'High'
-          });
-        }
-      }
-    });
-
-    return coverage;
+Return ONLY the JSON object. No explanations, no markdown formatting.`;
   }
 }
 
-// Export all services
-export { GeminiService, DocumentAIService, ComplianceEngine };
+// Export singleton instance
+const geminiService = new GeminiService();
+export default geminiService;

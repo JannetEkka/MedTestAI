@@ -1,17 +1,18 @@
-// server.js - Complete integration with Google Sheets
+﻿// server.js - FIXED WITH SERVICE INITIALIZATION
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-
-// Import services
 import documentProcessor from './services/documentProcessor.js';
-import testCaseGenerator from './services/testCaseGenerator.js';
-import googleSheetsService from './services/google-sheets.js';
+import testCaseGeneratorMultiCompliance from './services/testCaseGeneratorMultiCompliance.js';
+import WebhookManager from './services/WebhookManager.js';
+import GoogleDriveService from './services/GoogleDriveService.js';
+import { asyncHandler, errorHandler } from './middleware/errorHandler.js';
+import googleSheets from './services/google-sheets.js';
+import GoogleDriveExport from './services/GoogleDriveExport.js';
 
-// ES modules compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -21,363 +22,779 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Configure multer for file uploads
+// File upload
 const upload = multer({
   dest: 'uploads/',
-  limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
+  limits: { fileSize: 20 * 1024 * 1024 }
 });
 
-// ==================== INITIALIZATION ====================
-console.log('🚀 [SERVER] Starting MedTestAI Backend Server...');
-console.log('=' .repeat(80));
-
-// Initialize services on startup
-(async () => {
-  try {
-    console.log('📝 [SERVER] Initializing services...');
-    
-    // Initialize test case generator
-    await testCaseGenerator.initialize();
-    
-    // Initialize Google Sheets service
-    await googleSheetsService.initialize();
-    
-    console.log('✅ [SERVER] All services initialized successfully');
-    console.log('=' .repeat(80));
-  } catch (error) {
-    console.error('❌ [SERVER] Service initialization failed:', error);
-    console.error('=' .repeat(80));
-  }
-})();
-
-// ==================== HEALTH CHECK ====================
+// Health check
 app.get('/health', (req, res) => {
-  console.log('💓 [HEALTH] Health check request received');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    services: {
-      documentProcessor: 'ready',
-      testCaseGenerator: 'ready',
-      googleSheets: 'ready'
+    features: {
+      webhooks: true,
+      googleDrive: true,
+      chromeExtension: true,
+      multiCompliance: true,
+      vertexAI: true
     }
   });
 });
 
-// ==================== DOCUMENT PROCESSING ====================
-app.post('/api/process-document', upload.single('document'), async (req, res) => {
-  const startTime = Date.now();
-  console.log('\n' + '='.repeat(80));
-  console.log('📄 [PROCESS] DOCUMENT PROCESSING REQUEST');
-  console.log('='.repeat(80));
-  console.log(`📄 [PROCESS] File: ${req.file?.originalname}`);
-  console.log(`📄 [PROCESS] Size: ${(req.file?.size / 1024).toFixed(2)} KB`);
+// ==================== WEBHOOK ENDPOINTS ====================
+
+// Register webhook
+app.post('/api/webhooks/register', asyncHandler(async (req, res) => {
+  const { url, events, secret } = req.body;
   
-  try {
-    if (!req.file) {
-      throw new Error('No file uploaded');
-    }
-
-    console.log('📝 [PROCESS] Reading file buffer...');
-    const fileBuffer = await fs.readFile(req.file.path);
-    
-    console.log('🤖 [PROCESS] Processing with Document AI...');
-    const result = await documentProcessor.processDocument(
-      fileBuffer,
-      req.file.originalname,
-      req.file.mimetype
-    );
-
-    // Clean up uploaded file
-    await fs.remove(req.file.path);
-    
-    const duration = Date.now() - startTime;
-    console.log(`✅ [PROCESS] Document processing complete in ${duration}ms`);
-    console.log('='.repeat(80) + '\n');
-    
-    res.json({
-      success: true,
-      extractedText: result.text,
-      pages: result.pages,
-      processingTime: duration
-    });
-    
-  } catch (error) {
-    console.error('❌ [PROCESS] Document processing failed:', error);
-    console.error('='.repeat(80) + '\n');
-    
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
   }
+  
+  const webhook = WebhookManager.registerWebhook({
+    url,
+    events: events || ['test.generated', 'document.processed'],
+    secret
+  });
+  
+  res.json({
+    success: true,
+    webhook
+  });
+}));
+
+// List webhooks
+app.get('/api/webhooks', (req, res) => {
+  const webhooks = WebhookManager.getAllWebhooks();
+  res.json({ success: true, webhooks });
 });
 
-// ==================== TEST CASE GENERATION ====================
-app.post('/api/generate-tests', async (req, res) => {
-  const startTime = Date.now();
-  console.log('\n' + '='.repeat(80));
-  console.log('🧪 [GENERATE] TEST CASE GENERATION REQUEST');
-  console.log('='.repeat(80));
+// Get webhook details
+app.get('/api/webhooks/:id', (req, res) => {
+  const webhook = WebhookManager.getWebhook(req.params.id);
+  if (!webhook) {
+    return res.status(404).json({ error: 'Webhook not found' });
+  }
+  res.json({ success: true, webhook });
+});
+
+// Update webhook
+app.patch('/api/webhooks/:id', asyncHandler(async (req, res) => {
+  const webhook = WebhookManager.updateWebhook(req.params.id, req.body);
+  res.json({ success: true, webhook });
+}));
+
+// Delete webhook
+app.delete('/api/webhooks/:id', (req, res) => {
+  const deleted = WebhookManager.deleteWebhook(req.params.id);
+  res.json({ success: true, deleted });
+});
+
+// Test webhook
+app.post('/api/webhooks/:id/test', asyncHandler(async (req, res) => {
+  const result = await WebhookManager.testWebhook(req.params.id);
+  res.json({ success: true, result });
+}));
+
+// Chrome extension endpoint
+app.post('/api/webhooks/generate', asyncHandler(async (req, res) => {
+  const { requirements, methodology, compliance } = req.body;
   
-  try {
-    const { requirements, methodology, compliance } = req.body;
-    
-    console.log(`📋 [GENERATE] Requirements: ${requirements?.length || 0}`);
-    console.log(`🔧 [GENERATE] Methodology: ${methodology || 'agile'}`);
-    console.log(`🔒 [GENERATE] Compliance: ${compliance || 'HIPAA'}`);
-    
-    if (!requirements || requirements.length === 0) {
-      throw new Error('No requirements provided');
-    }
+  if (!requirements) {
+    return res.status(400).json({ error: 'Requirements are required' });
+  }
+  
+  const testCases = await testCaseGeneratorMultiCompliance.generateTestCases(
+    Array.isArray(requirements) ? requirements : [requirements],
+    methodology || 'agile',
+    Array.isArray(compliance) ? compliance : [compliance || 'HIPAA']
+  );
+  
+  await WebhookManager.triggerWebhook('test.generated', {
+    source: 'chrome-extension',
+    testCases: testCases.testCases
+  });
+  
+  res.json({
+    success: true,
+    testCases: testCases.testCases,
+    metadata: testCases.metadata
+  });
+}));
 
-    const testCases = await testCaseGenerator.generateTestCases(
-      requirements,
-      methodology || 'agile',
-      compliance || 'HIPAA'
-    );
+// ==================== GOOGLE DRIVE ENDPOINTS ====================
 
-    const duration = Date.now() - startTime;
-    console.log(`✅ [GENERATE] Generated ${testCases.testCases?.length || 0} test cases in ${duration}ms`);
-    console.log('='.repeat(80) + '\n');
-    
-    res.json({
-      success: true,
-      testCases,
-      processingTime: duration
-    });
-    
-  } catch (error) {
-    console.error('❌ [GENERATE] Test generation failed:', error);
-    console.error('='.repeat(80) + '\n');
-    
-    res.status(500).json({
+app.post('/api/drive/export', asyncHandler(async (req, res) => {
+  const { testCases, fileName, methodology, compliance } = req.body;
+  
+  if (!testCases || testCases.length === 0) {
+    return res.status(400).json({ error: 'Test cases are required' });
+  }
+  
+  const result = await GoogleDriveService.exportToDrive({
+    testCases,
+    fileName: fileName || 'medtestai-export',
+    methodology,
+    compliance
+  });
+  
+  res.json({
+    success: true,
+    fileUrl: result.fileUrl,
+    fileId: result.fileId
+  });
+}));
+
+app.get('/api/drive/auth-status', asyncHandler(async (req, res) => {
+  const isAuthorized = await GoogleDriveService.isAuthorized();
+  res.json({ authorized: isAuthorized });
+}));
+
+// ==================== GOOGLE SHEETS EXPORT ====================
+
+app.post('/api/export/google-sheets', asyncHandler(async (req, res) => {
+  console.log('ðŸ“Š [Sheets] Export request received');
+  
+  const { testCases, config } = req.body;
+  
+  if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+    return res.status(400).json({
       success: false,
-      error: error.message
+      error: 'Test cases array is required'
     });
   }
-});
+  
+  const result = await googleSheets.exportTestCases(testCases, config);
+  
+  res.json({
+    success: true,
+    spreadsheetUrl: result.spreadsheetUrl,
+    spreadsheetId: result.spreadsheetId,
+    rowsWritten: result.rowsWritten
+  });
+}));
+
+
+
+// ==================== GOOGLE DRIVE FOLDER EXPORT ====================
+
+// Verify folder access
+app.post('/api/drive/verify-folder', asyncHandler(async (req, res) => {
+  const { folderId } = req.body;
+  
+  if (!folderId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Folder ID is required'
+    });
+  }
+
+  const result = await GoogleDriveExport.verifyFolder(folderId);
+  
+  res.json({
+    success: result.valid,
+    folderName: result.folderName,
+    error: result.error
+  });
+}));
+
+// Export to user's Drive folder
+app.post('/api/export/drive-folder', asyncHandler(async (req, res) => {
+  console.log('ðŸ“ [Drive] Export to folder request received');
+  
+  const { testCases, folderId, fileName, methodology, compliance } = req.body;
+  
+  if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Test cases array is required'
+    });
+  }
+
+  if (!folderId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Google Drive folder ID is required'
+    });
+  }
+
+  try {
+    console.log(`ðŸ“ [Drive] Exporting ${testCases.length} test cases to folder: ${folderId}`);
+    
+    const result = await GoogleDriveExport.createSheetInFolder(testCases, {
+      folderId,
+      fileName: fileName || 'MedTestAI Test Cases',
+      methodology: methodology || 'agile',
+      compliance: compliance || 'HIPAA'
+    });
+
+    console.log('âœ… [Drive] Export successful:', result.spreadsheetUrl);
+
+    res.json({
+      success: true,
+      spreadsheetUrl: result.spreadsheetUrl,
+      spreadsheetId: result.spreadsheetId,
+      fileName: result.fileName
+    });
+
+  } catch (error) {
+    console.error('âŒ [Drive] Export failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export to Google Drive'
+    });
+  }
+}));
 
 // ==================== EXPORT ENDPOINTS ====================
 
-// CSV Export
-app.post('/api/tests/export', async (req, res) => {
-  console.log('\n' + '='.repeat(80));
-  console.log('📤 [EXPORT] EXPORT REQUEST');
-  console.log('='.repeat(80));
+app.post('/api/tests/export', asyncHandler(async (req, res) => {
+  console.log('ðŸ“¤ [Export] Export request received');
   
-  try {
-    const { testCases, format, methodology, compliance } = req.body;
-    
-    console.log(`📊 [EXPORT] Format: ${format || 'csv'}`);
-    console.log(`📊 [EXPORT] Test cases: ${testCases?.testCases?.length || 0}`);
-    
-    if (!testCases || !testCases.testCases) {
-      throw new Error('No test cases provided');
-    }
-
-    let exportData, mimeType, filename;
-    const timestamp = new Date().toISOString().split('T')[0];
-
-    switch (format?.toLowerCase()) {
-      case 'csv':
-        console.log('📊 [EXPORT] Generating CSV...');
-        exportData = generateCSV(testCases.testCases);
-        mimeType = 'text/csv';
-        filename = `medtestai-tests-${timestamp}.csv`;
-        break;
-        
-      case 'json':
-        console.log('📊 [EXPORT] Generating JSON...');
-        exportData = JSON.stringify(testCases, null, 2);
-        mimeType = 'application/json';
-        filename = `medtestai-tests-${timestamp}.json`;
-        break;
-        
-      case 'excel':
-        console.log('📊 [EXPORT] Generating Excel...');
-        exportData = generateExcel(testCases.testCases);
-        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        filename = `medtestai-tests-${timestamp}.xlsx`;
-        break;
-        
-      default:
-        throw new Error(`Unsupported format: ${format}`);
-    }
-
-    console.log(`✅ [EXPORT] Export generated: ${filename}`);
-    console.log('='.repeat(80) + '\n');
-    
-    res.json({
-      success: true,
-      data: exportData,
-      mimeType,
-      filename,
-      exportedCount: testCases.testCases.length
-    });
-    
-  } catch (error) {
-    console.error('❌ [EXPORT] Export failed:', error);
-    console.error('='.repeat(80) + '\n');
-    
-    res.status(500).json({
+  const { testCases, format, methodology, complianceFrameworks } = req.body;
+  
+  if (!testCases || testCases.length === 0) {
+    return res.status(400).json({
       success: false,
-      error: error.message
+      error: 'No test cases provided for export'
     });
   }
-});
-
-// ==================== GOOGLE SHEETS EXPORT ====================
-app.post('/api/v1/export/google-sheets', async (req, res) => {
-  console.log('\n' + '='.repeat(80));
-  console.log('📊 [GOOGLE SHEETS] EXPORT REQUEST');
-  console.log('='.repeat(80));
+  
+  console.log(`ðŸ“¤ [Export] Format: ${format}, Test cases: ${testCases.length}`);
   
   try {
-    const { testCases, methodology, compliance } = req.body;
+    switch (format) {
+      case 'csv': {
+        const headers = [
+          'Test ID',
+          'Test Name',
+          'Category',
+          'Priority',
+          'Description',
+          'Preconditions',
+          'Test Steps',
+          'Expected Results',
+          'Compliance Requirements',
+          'Risk Level'
+        ];
+        
+        const rows = testCases.map(tc => [
+          tc.testId || tc.id || '',
+          tc.testName || tc.name || tc.title || '',
+          tc.category || '',
+          tc.priority || 'Medium',
+          tc.description || '',
+          Array.isArray(tc.preconditions) ? tc.preconditions.join('; ') : tc.preconditions || '',
+          Array.isArray(tc.testSteps) ? tc.testSteps.map((s, i) => `${i+1}. ${s.step || s}`).join('\n') : '',
+          tc.expectedResults || tc.expected || '',
+          Array.isArray(tc.complianceRequirements) ? tc.complianceRequirements.join(', ') : tc.complianceRequirements || '',
+          tc.riskLevel || ''
+        ]);
+        
+        const csv = [headers, ...rows]
+          .map(row => row.map(cell => {
+            const cellStr = String(cell).replace(/"/g, '""');
+            return `"${cellStr}"`;
+          }).join(','))
+          .join('\n');
+        
+        console.log(`âœ… [Export] CSV generated - ${rows.length} rows`);
+        
+        res.json({
+          success: true,
+          data: csv,
+          filename: `medtestai-testcases-${methodology || 'export'}-${Date.now()}.csv`,
+          mimeType: 'text/csv',
+          count: rows.length
+        });
+        break;
+      }
+
+      case 'json': {
+        const exportData = {
+          metadata: {
+            exportDate: new Date().toISOString(),
+            methodology: methodology || 'agile',
+            complianceFrameworks: complianceFrameworks || [],
+            totalTests: testCases.length
+          },
+          testCases: testCases
+        };
+        
+        console.log(`âœ… [Export] JSON generated - ${testCases.length} test cases`);
+        
+        res.json({
+          success: true,
+          data: JSON.stringify(exportData, null, 2),
+          filename: `medtestai-testcases-${methodology || 'export'}-${Date.now()}.json`,
+          mimeType: 'application/json',
+          count: testCases.length
+        });
+        break;
+      }
+
+      case 'excel': {
+        console.log('ðŸ“Š [Export] Generating Excel CSV format...');
+        
+        const headers = [
+          'Test ID',
+          'Test Name',
+          'Category',
+          'Priority',
+          'Description',
+          'Preconditions',
+          'Test Steps',
+          'Expected Results',
+          'Compliance Requirements',
+          'Risk Level',
+          'Testing Technique',
+          'Automation Feasibility'
+        ];
+        
+        const rows = testCases.map(tc => [
+          tc.testId || tc.id || '',
+          tc.testName || tc.name || tc.title || '',
+          tc.category || '',
+          tc.priority || 'Medium',
+          tc.description || '',
+          Array.isArray(tc.preconditions) ? tc.preconditions.join('; ') : tc.preconditions || '',
+          Array.isArray(tc.testSteps) ? 
+            tc.testSteps.map((s, i) => {
+              if (typeof s === 'object' && s.action) {
+                return `Step ${s.step || i+1}: ${s.action}`;
+              }
+              return `${i+1}. ${s.step || s}`;
+            }).join('\n') : '',
+          tc.expectedResults || tc.expected || '',
+          Array.isArray(tc.complianceRequirements) ? 
+            tc.complianceRequirements.join(', ') : 
+            tc.complianceRequirements || '',
+          tc.riskLevel || '',
+          tc.testingTechnique || '',
+          tc.automationFeasibility || ''
+        ]);
+        
+        const csv = [headers, ...rows]
+          .map(row => row.map(cell => {
+            const cellStr = String(cell).replace(/"/g, '""');
+            return `"${cellStr}"`;
+          }).join(','))
+          .join('\n');
+        
+        console.log(`âœ… [Export] Excel CSV generated - ${rows.length} rows`);
+        
+        res.json({
+          success: true,
+          data: csv,
+          filename: `medtestai-testcases-excel-${Date.now()}.csv`,
+          mimeType: 'text/csv',
+          count: rows.length
+        });
+        break;
+      }
+
+      default:
+        console.error(`âŒ [Export] Unsupported format: ${format}`);
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported export format: ${format}`
+        });
+    }
+
+    console.log(`âœ… [Export] Export successful - Format: ${format}`);
     
-    console.log(`📊 [GOOGLE SHEETS] Test cases count: ${testCases?.length || 0}`);
-    console.log(`🔧 [GOOGLE SHEETS] Methodology: ${methodology || 'agile'}`);
-    console.log(`🔒 [GOOGLE SHEETS] Compliance: ${compliance || 'HIPAA'}`);
-    
-    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
-      console.log('⚠️  [GOOGLE SHEETS] No test cases provided');
+  } catch (error) {
+    console.error(`âŒ [Export] Export failed:`, error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Export failed'
+    });
+  }
+}));
+
+// ==================== EXISTING ENDPOINTS (FIXED) ====================
+
+// Process document
+app.post('/api/process-document', upload.single('document'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  
+  const result = await documentProcessor.processDocument(
+    req.file.path,
+    req.file.originalname
+  );
+  
+  // Trigger webhooks
+  await WebhookManager.triggerWebhook('document.processed', {
+    fileName: req.file.originalname,
+    requirements: result.requirements
+  });
+  
+  res.json(result);
+}));
+
+// Regenerate tests (FIXED)
+app.post('/api/workflow/regenerate', asyncHandler(async (req, res) => {
+  console.log('ðŸ”„ [Regenerate] Request received');
+  
+  const { requirements, methodology, complianceFrameworks } = req.body;
+  
+  if (!requirements || !Array.isArray(requirements)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Requirements array is required'
+    });
+  }
+
+  console.log(`ðŸ“‹ [Regenerate] Processing ${requirements.length} requirements`);
+  console.log(`ðŸ”§ [Regenerate] Methodology: ${methodology || 'agile'}`);
+  console.log(`ðŸ›¡ï¸ [Regenerate] Compliance: ${complianceFrameworks?.join(', ') || 'HIPAA'}`);
+
+  try {
+    // Normalize compliance frameworks
+    const frameworks = Array.isArray(complianceFrameworks) 
+      ? complianceFrameworks 
+      : (complianceFrameworks ? [complianceFrameworks] : ['hipaa']);
+
+    // Map requirements to text strings
+    const requirementTexts = requirements.map(req => {
+      if (typeof req === 'string') {
+        return req;
+      } else if (req && typeof req === 'object') {
+        return req.text || req.requirement || req.description || String(req);
+      }
+      return String(req);
+    }).filter(text => text && text.trim().length > 0);
+
+    if (requirementTexts.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No test cases to export'
+        error: 'No valid requirement texts found'
       });
     }
 
-    console.log('📝 [GOOGLE SHEETS] Step 1: Calling Google Sheets service...');
-    const result = await googleSheetsService.exportTestCases(testCases);
+    console.log('ðŸ“¤ [Regenerate] Calling test generator...');
     
-    console.log('✅ [GOOGLE SHEETS] Step 2: Export successful!');
-    console.log(`📊 [GOOGLE SHEETS] Updated rows: ${result.updatedRows}`);
-    console.log(`🔗 [GOOGLE SHEETS] Sheet URL: ${result.sheetUrl}`);
-    console.log('='.repeat(80) + '\n');
-    
+    // Generate test cases using the multi-compliance generator
+    const result = await testCaseGeneratorMultiCompliance.generateTestCases(
+      requirementTexts,
+      methodology || 'agile',
+      frameworks
+    );
+
+    console.log('âœ… [Regenerate] Test generation successful');
+    console.log(`ðŸ“Š [Regenerate] Generated ${result.testCases?.length || 0} test cases`);
+
+    // Validate response structure
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid response from test generator');
+    }
+
+    if (!result.testCases || !Array.isArray(result.testCases)) {
+      throw new Error('Test generator did not return test cases array');
+    }
+
+    // Return success response with consistent structure
     res.json({
       success: true,
-      message: `Exported ${testCases.length} test cases to Google Sheets`,
-      sheetUrl: result.sheetUrl,
-      updatedRows: result.updatedRows,
-      spreadsheetId: googleSheetsService.spreadsheetId
+      data: {
+        testCases: result.testCases,
+        metadata: result.metadata || {
+          methodology: methodology || 'agile',
+          complianceFrameworks: frameworks,
+          generatedAt: new Date().toISOString()
+        },
+        summary: result.summary || {
+          totalTests: result.testCases.length,
+          byPriority: {},
+          byCategory: {}
+        }
+      },
+      message: `Successfully generated ${result.testCases.length} test cases`
     });
-    
+
   } catch (error) {
-    console.error('❌ [GOOGLE SHEETS] Export failed:', error);
-    console.error('❌ [GOOGLE SHEETS] Error details:', error.stack);
-    console.error('='.repeat(80) + '\n');
+    console.error('âŒ [Regenerate] Error:', error);
+    console.error('âŒ [Regenerate] Stack:', error.stack);
     
+    // Return detailed error for debugging
     res.status(500).json({
       success: false,
-      error: 'Failed to export to Google Sheets',
-      details: error.message
+      error: error.message || 'Test generation failed',
+      details: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        stack: error.stack?.split('\n').slice(0, 3)
+      } : undefined
     });
   }
-});
+}));
 
-// Create new Google Sheet
-app.post('/api/v1/export/create-sheet', async (req, res) => {
-  console.log('\n' + '='.repeat(80));
-  console.log('📊 [GOOGLE SHEETS] CREATE NEW SHEET REQUEST');
-  console.log('='.repeat(80));
+app.post('/api/workflow/complete', upload.single('document'), asyncHandler(async (req, res) => {
+  console.log('ðŸ“„ [Workflow] Complete workflow request received');
+  
+  if (!req.file) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'No file uploaded' 
+    });
+  }
   
   try {
-    console.log('📝 [GOOGLE SHEETS] Creating new spreadsheet...');
-    const result = await googleSheetsService.createTestManagementSheet();
+    // Extract parameters
+    const methodology = req.body.methodology || 'agile';
+    let complianceFrameworks = [];
     
-    console.log(`✅ [GOOGLE SHEETS] New sheet created!`);
-    console.log(`🔗 [GOOGLE SHEETS] Sheet URL: ${result.url}`);
-    console.log(`📋 [GOOGLE SHEETS] Sheet ID: ${result.spreadsheetId}`);
-    console.log('='.repeat(80) + '\n');
+    // Handle compliance frameworks from FormData
+    if (req.body['complianceFrameworks[]']) {
+      // Can be array or single value
+      if (Array.isArray(req.body['complianceFrameworks[]'])) {
+        complianceFrameworks = req.body['complianceFrameworks[]'];
+      } else {
+        complianceFrameworks = [req.body['complianceFrameworks[]']];
+      }
+    } else if (req.body.complianceFrameworks) {
+      complianceFrameworks = Array.isArray(req.body.complianceFrameworks) 
+        ? req.body.complianceFrameworks 
+        : [req.body.complianceFrameworks];
+    } else {
+      complianceFrameworks = ['hipaa']; // Default
+    }
     
-    res.json({
+    console.log('ðŸ“‹ [Workflow] Configuration:');
+    console.log('   File:', req.file.originalname);
+    console.log('   Size:', req.file.size);
+    console.log('   Methodology:', methodology);
+    console.log('   Compliance:', complianceFrameworks.join(', '));
+    
+    // Step 1: Process document
+    console.log('ðŸ“„ [Workflow] Step 1: Processing document...');
+    const documentResult = await documentProcessor.processDocument(
+      req.file.path,
+      req.file.originalname
+    );
+    
+    console.log(`âœ… [Workflow] Document processed: ${documentResult.requirements.length} requirements`);
+    console.log(`   Method: ${documentResult.processingMethod}`);
+    
+    // Validate requirements
+    if (!documentResult.requirements || documentResult.requirements.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No requirements found in document',
+        details: {
+          fileName: req.file.originalname,
+          processingMethod: documentResult.processingMethod,
+          suggestion: 'Document may be empty or in unsupported format'
+        }
+      });
+    }
+    
+    // Step 2: Generate test cases
+    console.log('ðŸ§ª [Workflow] Step 2: Generating test cases...');
+    
+    // Map requirements to text array
+    const requirementTexts = documentResult.requirements.map(req => {
+      if (typeof req === 'string') {
+        return req;
+      } else if (req && typeof req === 'object' && req.text) {
+        return req.text;
+      } else {
+        return String(req);
+      }
+    }).filter(text => text && text.trim().length > 0);
+    
+    console.log(`   Processing ${requirementTexts.length} valid requirements`);
+    
+    const testResult = await testCaseGeneratorMultiCompliance.generateTestCases(
+      requirementTexts,
+      methodology,
+      complianceFrameworks
+    );
+    
+    console.log(`âœ… [Workflow] Generated ${testResult.testCases?.length || 0} test cases`);
+    
+    // Validate test results
+    if (!testResult || !testResult.testCases || testResult.testCases.length === 0) {
+      return res.status(500).json({
+        success: false,
+        error: 'Test generation failed',
+        details: {
+          documentProcessed: true,
+          requirementsFound: requirementTexts.length,
+          testCasesGenerated: 0,
+          suggestion: 'Check Vertex AI configuration and service account credentials'
+        }
+      });
+    }
+    
+    // Step 3: Trigger webhooks
+    try {
+      await WebhookManager.triggerWebhook('document.processed', {
+        fileName: req.file.originalname,
+        requirements: documentResult.requirements
+      });
+      
+      await WebhookManager.triggerWebhook('test.generated', {
+        testCases: testResult.testCases,
+        summary: testResult.summary
+      });
+    } catch (webhookError) {
+      console.warn('âš ï¸  [Workflow] Webhook trigger failed:', webhookError.message);
+      // Continue anyway - webhooks are non-critical
+    }
+    
+    // Step 4: Build comprehensive response
+    const response = {
       success: true,
-      spreadsheetId: result.spreadsheetId,
-      url: result.url
-    });
+      message: `Successfully processed ${req.file.originalname} and generated ${testResult.testCases.length} test cases`,
+      
+      // Document processing results
+      extractedData: {
+        requirements: documentResult.requirements,
+        fileName: req.file.originalname,
+        documentType: documentResult.documentType,
+        processedAt: documentResult.processedAt,
+        processingMethod: documentResult.processingMethod,
+        text: documentResult.text // Full document text
+      },
+      
+      // Test generation results
+      testCases: testResult.testCases,
+      
+      // Metadata
+      metadata: {
+        methodology: methodology,
+        complianceFrameworks: complianceFrameworks,
+        generatedAt: new Date().toISOString(),
+        requirementCount: documentResult.requirements.length,
+        testCaseCount: testResult.testCases.length,
+        ...testResult.metadata
+      },
+      
+      // Summary statistics
+      summary: testResult.summary || {
+        totalTests: testResult.testCases.length,
+        byPriority: {},
+        byCategory: {},
+        complianceCoverage: {}
+      },
+      
+      // Service status
+      serviceStatus: documentResult.serviceStatus || {
+        documentAI: false,
+        cloudStorage: false,
+        geminiAI: true,
+        vertexAI: true
+      }
+    };
+    
+    console.log('âœ… [Workflow] Complete workflow successful');
+    console.log(`   ${documentResult.requirements.length} requirements â†’ ${testResult.testCases.length} test cases`);
+    
+    res.json(response);
     
   } catch (error) {
-    console.error('❌ [GOOGLE SHEETS] Sheet creation failed:', error);
-    console.error('='.repeat(80) + '\n');
+    console.error('âŒ [Workflow] Complete workflow failed:', error);
+    console.error('   Stack:', error.stack);
     
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Workflow processing failed',
+      details: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        stack: error.stack?.split('\n').slice(0, 5),
+        file: req.file?.originalname
+      } : undefined
     });
   }
-});
+}));
 
-// ==================== HELPER FUNCTIONS ====================
+app.post('/api/export/google-sheets', asyncHandler(async (req, res) => {
+  const { testCases, config } = req.body;
+  if (!testCases || testCases.length === 0) {
+    return res.status(400).json({ success: false, error: 'No test cases' });
+  }
+  const result = await GoogleSheetsService.exportToSheets(testCases, config);
+  res.json({ success: true, spreadsheetUrl: result.spreadsheetUrl, 
+    spreadsheetId: result.spreadsheetId, rowsWritten: result.rowsWritten });
+}));
 
-function generateCSV(testCases) {
-  console.log('📝 [CSV] Generating CSV data...');
+// Error handler
+app.use(errorHandler);
+
+// ==================== SERVICE INITIALIZATION ====================
+async function initializeServices() {
+  console.log('\nðŸ”§ [Init] Initializing MedTestAI services...');
+  console.log('=' .repeat(60));
   
-  const headers = [
-    'Test ID', 'Test Name', 'Category', 'Priority', 'Description',
-    'Preconditions', 'Test Steps', 'Expected Results', 'Compliance Requirements'
-  ];
-  
-  const rows = testCases.map(tc => [
-    tc.testId || '',
-    tc.testName || '',
-    tc.category || '',
-    tc.priority || '',
-    tc.description || '',
-    Array.isArray(tc.preconditions) ? tc.preconditions.join('; ') : '',
-    Array.isArray(tc.testSteps) ? tc.testSteps.map((s, i) => `${i + 1}. ${s.action || s}`).join(' | ') : '',
-    Array.isArray(tc.expectedResults) ? tc.expectedResults.join('; ') : tc.expectedResult || '',
-    Array.isArray(tc.complianceRequirements) ? tc.complianceRequirements.join('; ') : ''
-  ]);
-  
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-  ].join('\n');
-  
-  console.log(`✅ [CSV] Generated ${rows.length} rows`);
-  return csvContent;
+  try {
+    // Initialize test generator (Vertex AI)
+    console.log('ðŸ¤– [Init] Initializing Test Generator (Vertex AI)...');
+    await testCaseGeneratorMultiCompliance.initialize();
+    console.log('âœ… [Init] Test generator ready');
+    
+    // Initialize document processor if needed
+    if (documentProcessor.initialize) {
+      console.log('ðŸ“„ [Init] Initializing Document Processor...');
+      await documentProcessor.initialize();
+      console.log('âœ… [Init] Document processor ready');
+    }
+    
+    console.log('=' .repeat(60));
+    console.log('âœ… [Init] All services initialized successfully\n');
+    return true;
+  } catch (error) {
+    console.error('âŒ [Init] Service initialization failed:', error);
+    console.error('   Error:', error.message);
+    console.error('   Stack:', error.stack?.split('\n').slice(0, 3));
+    console.error('\nâš ï¸  Server will start but AI features may not work');
+    console.error('   Check your .env file and service account credentials\n');
+    return false;
+  }
 }
-
-function generateExcel(testCases) {
-  console.log('📝 [EXCEL] Generating Excel data...');
-  // Simplified Excel generation - you can enhance this with a library like xlsx
-  return generateCSV(testCases);
-}
-
-// ==================== ERROR HANDLING ====================
-app.use((err, req, res, next) => {
-  console.error('❌ [ERROR] Unhandled error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    message: err.message
-  });
-});
 
 // ==================== START SERVER ====================
-app.listen(PORT, () => {
-  console.log('\n' + '='.repeat(80));
-  console.log('🚀 [SERVER] MEDTESTAI BACKEND SERVER STARTED');
-  console.log('='.repeat(80));
-  console.log(`✅ [SERVER] Server running on port ${PORT}`);
-  console.log(`🌐 [SERVER] API URL: http://localhost:${PORT}`);
-  console.log(`📊 [SERVER] Google Sheets: ${googleSheetsService.spreadsheetId ? 'Configured' : 'Not Configured'}`);
-  console.log(`🔒 [SERVER] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('='.repeat(80));
-  console.log('\n📝 [SERVER] Available Endpoints:');
-  console.log('   GET  /health                          - Health check');
-  console.log('   POST /api/process-document            - Process healthcare documents');
-  console.log('   POST /api/generate-tests              - Generate test cases');
-  console.log('   POST /api/tests/export                - Export (CSV/JSON/Excel)');
-  console.log('   POST /api/v1/export/google-sheets     - Export to Google Sheets');
-  console.log('   POST /api/v1/export/create-sheet      - Create new Google Sheet');
-  console.log('='.repeat(80) + '\n');
-});
+(async () => {
+  // Initialize services before starting server
+  await initializeServices();
+  
+  // Start Express server
+  const server = app.listen(PORT, () => {
+    console.log('ðŸš€ MedTestAI Server Started');
+    console.log('=' .repeat(60));
+    console.log(`ðŸ“ Port: ${PORT}`);
+    console.log(`ðŸŒ Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`ðŸ“¦ Project: ${process.env.GOOGLE_CLOUD_PROJECT || 'not configured'}`);
+    console.log('\nâœ… Enabled Features:');
+    console.log('   â€¢ Vertex AI (Gemini)');
+    console.log('   â€¢ Multi-compliance testing');
+    console.log('   â€¢ Document processing');
+    console.log('   â€¢ Webhooks');
+    console.log('   â€¢ Google Drive integration');
+    console.log('   â€¢ Chrome Extension API');
+    console.log('   â€¢ Google Sheets export');
+    console.log('=' .repeat(60));
+    console.log('ðŸŽ‰ Server ready to accept requests!\n');
+  });
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('\nâš ï¸  SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+      console.log('âœ… Server closed');
+      process.exit(0);
+    });
+  });
+})();
 
 export default app;
+
+

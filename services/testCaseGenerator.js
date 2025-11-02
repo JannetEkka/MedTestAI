@@ -1,11 +1,10 @@
-// services/testCaseGenerator.js - With comprehensive logging
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// services/testCaseGenerator.js - UPDATED FOR VERTEX AI
+import { VertexAI } from '@google-cloud/vertexai';
 
 class TestCaseGenerator {
   constructor() {
-    this.genAI = null;
+    this.vertex = null;
     this.model = null;
-    this.apiKey = process.env.GEMINI_API_KEY;
     
     console.log('🚀 [TestCaseGenerator] Initializing...');
   }
@@ -15,16 +14,15 @@ class TestCaseGenerator {
     console.log('📝 [TestCaseGenerator] STEP 1: Starting initialization');
     
     try {
-      if (!this.apiKey) {
-        throw new Error('GEMINI_API_KEY not found in environment variables');
-      }
-
-      console.log('📝 [TestCaseGenerator] STEP 2: Creating GoogleGenerativeAI client');
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
+      console.log('📝 [TestCaseGenerator] STEP 2: Creating Vertex AI client');
+      this.vertex = new VertexAI({
+        project: process.env.GOOGLE_CLOUD_PROJECT || 'pro-variety-472211-b9',
+        location: 'us-central1'
+      });
       
-      console.log('📝 [TestCaseGenerator] STEP 3: Loading Gemini model (gemini-1.5-flash)');
-      this.model = this.genAI.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
+      console.log('📝 [TestCaseGenerator] STEP 3: Loading Gemini model (gemini-2.5-flash)');
+      this.model = this.vertex.getGenerativeModel({ 
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.7,
           topK: 40,
@@ -35,7 +33,8 @@ class TestCaseGenerator {
       
       const duration = Date.now() - startTime;
       console.log(`✅ [TestCaseGenerator] Initialization complete in ${duration}ms`);
-      console.log('✅ [TestCaseGenerator] Model: gemini-1.5-flash');
+      console.log('✅ [TestCaseGenerator] Model: gemini-2.5-flash');
+      console.log('✅ [TestCaseGenerator] Authentication: ADC (Application Default Credentials)');
       console.log('✅ [TestCaseGenerator] Ready to generate test cases');
       
       return true;
@@ -43,6 +42,10 @@ class TestCaseGenerator {
       const duration = Date.now() - startTime;
       console.error(`❌ [TestCaseGenerator] Initialization failed after ${duration}ms`);
       console.error('❌ [TestCaseGenerator] Error:', error.message);
+      console.error('❌ [TestCaseGenerator] Make sure:');
+      console.error('   1. GOOGLE_APPLICATION_CREDENTIALS is set');
+      console.error('   2. Service account has "AI Platform User" role');
+      console.error('   3. Vertex AI API is enabled');
       throw error;
     }
   }
@@ -50,276 +53,195 @@ class TestCaseGenerator {
   async generateTestCases(requirements, methodology = 'agile', compliance = 'HIPAA') {
     const startTime = Date.now();
     console.log('\n' + '='.repeat(80));
-    console.log('🧪 [TestCaseGenerator] STARTING TEST CASE GENERATION');
+    console.log('🧪 [TestCaseGenerator] Starting TEST CASE GENERATION');
     console.log('='.repeat(80));
-    console.log(`📋 [TestCaseGenerator] Requirements: ${requirements.length} items`);
-    console.log(`🔧 [TestCaseGenerator] Methodology: ${methodology}`);
-    console.log(`🔒 [TestCaseGenerator] Compliance: ${compliance}`);
+    console.log(`📋 Requirements: ${Array.isArray(requirements) ? requirements.length : 1}`);
+    console.log(`🔧 Methodology: ${methodology}`);
+    console.log(`🛡️  Compliance: ${compliance}`);
+    console.log('');
     
     try {
-      // Step 1: Ensure model is initialized
+      // Initialize if not already done
       if (!this.model) {
-        console.log('⚠️  [TestCaseGenerator] Model not initialized, initializing now...');
+        console.log('⚙️  [TestCaseGenerator] Model not initialized, initializing now...');
         await this.initialize();
       }
-
-      // Step 2: Build prompt
-      console.log('📝 [TestCaseGenerator] STEP 1: Building AI prompt...');
-      const prompt = this.buildHealthcarePrompt(requirements, methodology, compliance);
-      console.log(`📝 [TestCaseGenerator] Prompt length: ${prompt.length} characters`);
-
-      // Step 3: Call Gemini API
-      console.log('🤖 [TestCaseGenerator] STEP 2: Calling Gemini API...');
-      const apiStartTime = Date.now();
+      
+      console.log('📝 [TestCaseGenerator] Building prompt...');
+      const prompt = this.buildPrompt(requirements, methodology, compliance);
+      console.log(`✅ [TestCaseGenerator] Prompt ready (${prompt.length} characters)`);
+      
+      console.log('🤖 [TestCaseGenerator] Sending request to Vertex AI...');
+      const genStart = Date.now();
       
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
       
-      const apiDuration = Date.now() - apiStartTime;
-      console.log(`✅ [TestCaseGenerator] API call completed in ${apiDuration}ms`);
+      const genDuration = Date.now() - genStart;
+      console.log(`✅ [TestCaseGenerator] Response received in ${genDuration}ms`);
       console.log(`📊 [TestCaseGenerator] Response length: ${text.length} characters`);
       
-      // Log token usage if available
-      if (result.response.usageMetadata) {
-        console.log(`💰 [TestCaseGenerator] Tokens used:`, result.response.usageMetadata);
+      console.log('🔄 [TestCaseGenerator] Parsing JSON response...');
+      let testCases;
+      try {
+        const cleanedText = this.cleanJsonResponse(text);
+        testCases = JSON.parse(cleanedText);
+        console.log(`✅ [TestCaseGenerator] Parsed ${testCases.testCases?.length || 0} test cases`);
+      } catch (parseError) {
+        console.error('❌ [TestCaseGenerator] JSON parsing failed:', parseError.message);
+        console.error('Raw response (first 500 chars):', text.substring(0, 500));
+        throw new Error(`Failed to parse AI response: ${parseError.message}`);
       }
-
-      // Step 4: Parse response
-      console.log('🔍 [TestCaseGenerator] STEP 3: Parsing AI response...');
-      const testData = this.parseTestCaseResponse(text);
       
-      console.log(`✅ [TestCaseGenerator] Parsed ${testData.testCases?.length || 0} test cases`);
+      // Validate and enhance test cases
+      if (!testCases.testCases || !Array.isArray(testCases.testCases)) {
+        throw new Error('Invalid response format: missing testCases array');
+      }
       
-      // Step 5: Add metadata
-      console.log('📝 [TestCaseGenerator] STEP 4: Adding metadata...');
-      testData.generatedAt = new Date().toISOString();
-      testData.methodology = methodology;
-      testData.complianceFramework = compliance;
-      testData.aiModel = 'gemini-1.5-flash';
-      testData.processingTime = `${Date.now() - startTime}ms`;
-      
-      // Step 6: Apply compliance rules
-      console.log(`🔒 [TestCaseGenerator] STEP 5: Applying ${compliance} compliance rules...`);
-      const enhancedData = this.applyComplianceRules(testData, compliance);
+      // Add metadata to each test case
+      testCases.testCases = testCases.testCases.map((tc, index) => ({
+        ...tc,
+        id: tc.id || `TC_${String(index + 1).padStart(3, '0')}`,
+        generatedAt: new Date().toISOString(),
+        methodology: methodology,
+        complianceFramework: compliance
+      }));
       
       const totalDuration = Date.now() - startTime;
-      console.log('\n' + '='.repeat(80));
-      console.log('✅ [TestCaseGenerator] TEST CASE GENERATION COMPLETE');
+      console.log('');
       console.log('='.repeat(80));
-      console.log(`📊 [TestCaseGenerator] Total test cases: ${enhancedData.testCases?.length || 0}`);
-      console.log(`⏱️  [TestCaseGenerator] Total time: ${totalDuration}ms`);
-      console.log(`🔒 [TestCaseGenerator] Compliance: ${compliance} rules applied`);
-      console.log('='.repeat(80) + '\n');
+      console.log('✅ [TestCaseGenerator] GENERATION COMPLETE');
+      console.log('='.repeat(80));
+      console.log(`⏱️  Total Duration: ${totalDuration}ms`);
+      console.log(`📋 Test Cases Generated: ${testCases.testCases.length}`);
+      console.log(`🔧 Methodology: ${methodology}`);
+      console.log(`🛡️  Compliance: ${compliance}`);
+      console.log('');
       
-      return enhancedData;
+      return testCases;
       
     } catch (error) {
       const totalDuration = Date.now() - startTime;
-      console.error('\n' + '='.repeat(80));
-      console.error('❌ [TestCaseGenerator] TEST CASE GENERATION FAILED');
+      console.error('');
       console.error('='.repeat(80));
-      console.error(`❌ [TestCaseGenerator] Error: ${error.message}`);
-      console.error(`⏱️  [TestCaseGenerator] Failed after: ${totalDuration}ms`);
-      console.error('='.repeat(80) + '\n');
-      throw new Error(`Test generation failed: ${error.message}`);
+      console.error('❌ [TestCaseGenerator] GENERATION FAILED');
+      console.error('='.repeat(80));
+      console.error(`⏱️  Failed after: ${totalDuration}ms`);
+      console.error(`❌ Error: ${error.message}`);
+      console.error('');
+      
+      throw new Error(`Test case generation failed: ${error.message}`);
     }
   }
+  
+  /**
+   * Clean JSON response from markdown blocks
+   */
+  cleanJsonResponse(text) {
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid response: empty or non-string');
+    }
 
-  buildHealthcarePrompt(requirements, methodology, compliance) {
-    console.log(`📝 [TestCaseGenerator] Building prompt with ${methodology} methodology`);
+    let cleaned = text.trim();
     
-    return `You are a healthcare software testing expert. Generate comprehensive test cases for healthcare software.
+    // Remove markdown code blocks
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+    
+    // Remove HTML if present
+    if (cleaned.includes('<!DOCTYPE') || cleaned.includes('<html')) {
+      throw new Error('Received HTML error page instead of JSON');
+    }
+    
+    cleaned = cleaned.trim();
+    
+    // Validate JSON start
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      throw new Error('Response does not start with valid JSON');
+    }
+    
+    return cleaned;
+  }
+  
+  /**
+   * Build comprehensive prompt for test generation
+   */
+  buildPrompt(requirements, methodology, compliance) {
+    const reqText = Array.isArray(requirements) 
+      ? requirements.map((r, i) => `${i + 1}. ${typeof r === 'object' ? r.text : r}`).join('\n')
+      : requirements;
+    
+    return `You are an expert healthcare QA engineer. Generate comprehensive test cases for the following requirements.
 
-REQUIREMENTS:
-${JSON.stringify(requirements, null, 2)}
+**CRITICAL INSTRUCTIONS:**
+1. Return ONLY valid JSON - no markdown, no explanations, no code blocks
+2. Follow the exact structure specified below
+3. Each test case must have all required fields
+4. Make test cases specific and actionable
 
-TESTING METHODOLOGY: ${methodology}
-COMPLIANCE FRAMEWORK: ${compliance}
+**Requirements:**
+${reqText}
 
-Generate test cases in this EXACT JSON format:
+**Testing Methodology:** ${methodology}
+**Compliance Framework:** ${compliance}
+
+**Required JSON Structure:**
 {
   "testCases": [
     {
-      "testId": "TC001",
-      "testName": "Descriptive test name",
-      "category": "functional|security|performance|usability",
-      "priority": "High|Medium|Low",
-      "description": "Clear test description",
-      "preconditions": ["condition1", "condition2"],
+      "id": "TC_001",
+      "title": "Clear, action-oriented test title",
+      "description": "Detailed test description",
+      "priority": "HIGH|MEDIUM|LOW",
+      "category": "Functional|Security|Performance|Compliance|UI/UX",
+      "riskLevel": "HIGH|MEDIUM|LOW",
+      "estimatedTime": "15 minutes",
+      "preconditions": ["Precondition 1", "Precondition 2"],
       "testSteps": [
         {
           "step": 1,
-          "action": "User action to perform",
-          "expectedResult": "Expected outcome",
-          "testData": "Required test data"
+          "action": "Specific action to perform",
+          "expectedResult": "Expected outcome"
         }
       ],
-      "expectedResult": "Overall expected result",
-      "complianceRequirements": ["${compliance} rule 1", "${compliance} rule 2"],
-      "riskLevel": "High|Medium|Low",
+      "testData": {
+        "inputs": ["Sample data 1", "Sample data 2"],
+        "expectedOutputs": ["Expected result 1"]
+      },
+      "complianceRequirements": ["${compliance} requirement"],
       "automationPotential": "High|Medium|Low",
-      "testingTechnique": "boundary-value|equivalence-partitioning|decision-table"
+      "tags": ["tag1", "tag2"]
     }
   ],
-  "summary": {
-    "totalTestCases": 0,
-    "coverage": 0,
-    "highPriorityCount": 0,
+  "metadata": {
+    "totalTests": 0,
+    "methodology": "${methodology}",
     "complianceFramework": "${compliance}",
-    "categoriesCount": {
-      "functional": 0,
-      "security": 0,
-      "performance": 0,
-      "usability": 0
-    }
+    "generatedAt": "${new Date().toISOString()}"
+  },
+  "summary": {
+    "byPriority": {"HIGH": 0, "MEDIUM": 0, "LOW": 0},
+    "byCategory": {},
+    "byRiskLevel": {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
   }
 }
 
-Generate 5-8 comprehensive test cases focusing on:
-1. Healthcare workflows and clinical safety
-2. ${compliance} compliance requirements
-3. Patient data protection and privacy
-4. ${methodology} methodology best practices
-5. Error handling and edge cases
+Generate test cases that:
+- Cover all requirements completely
+- Include security, compliance, and edge cases
+- Are specific to healthcare context
+- Follow ${methodology} methodology
+- Address ${compliance} compliance
+- Are realistic and executable
 
-Return ONLY valid JSON, no markdown formatting.`;
-  }
-
-  parseTestCaseResponse(text) {
-    console.log('🔍 [TestCaseGenerator] Parsing response text...');
-    
-    try {
-      // Remove markdown code blocks if present
-      let cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      
-      console.log('🔍 [TestCaseGenerator] Attempting JSON parse...');
-      const parsed = JSON.parse(cleanText);
-      
-      console.log(`✅ [TestCaseGenerator] Successfully parsed JSON`);
-      console.log(`📊 [TestCaseGenerator] Found ${parsed.testCases?.length || 0} test cases`);
-      
-      // Validate structure
-      if (!parsed.testCases || !Array.isArray(parsed.testCases)) {
-        console.warn('⚠️  [TestCaseGenerator] Invalid structure: testCases array missing');
-        return { testCases: [], summary: {} };
-      }
-      
-      return parsed;
-      
-    } catch (error) {
-      console.error('❌ [TestCaseGenerator] JSON parse error:', error.message);
-      console.error('❌ [TestCaseGenerator] Returning empty result');
-      return { 
-        testCases: [], 
-        summary: {},
-        parseError: error.message 
-      };
-    }
-  }
-
-  applyComplianceRules(testData, compliance) {
-    console.log(`🔒 [TestCaseGenerator] Applying ${compliance} compliance rules...`);
-    
-    const rules = this.getComplianceRules(compliance);
-    let appliedRulesCount = 0;
-    
-    // Enhance each test case with compliance requirements
-    if (testData.testCases) {
-      testData.testCases = testData.testCases.map((testCase, index) => {
-        console.log(`🔒 [TestCaseGenerator] Processing test case ${index + 1}/${testData.testCases.length}`);
-        
-        // Ensure compliance requirements exist
-        if (!testCase.complianceRequirements) {
-          testCase.complianceRequirements = [];
-        }
-        
-        // Add relevant compliance rules based on category
-        if (testCase.category === 'security' || testCase.category === 'privacy') {
-          testCase.complianceRequirements.push(...rules.security);
-          appliedRulesCount += rules.security.length;
-        }
-        
-        if (testCase.testName?.toLowerCase().includes('audit') || 
-            testCase.description?.toLowerCase().includes('audit')) {
-          testCase.complianceRequirements.push(...rules.auditLog);
-          appliedRulesCount += rules.auditLog.length;
-        }
-        
-        // Remove duplicates
-        testCase.complianceRequirements = [...new Set(testCase.complianceRequirements)];
-        
-        return testCase;
-      });
-    }
-    
-    console.log(`✅ [TestCaseGenerator] Applied ${appliedRulesCount} compliance rules`);
-    
-    // Add compliance validation metadata
-    testData.complianceValidation = {
-      framework: compliance,
-      rulesApplied: Object.values(rules).flat(),
-      validatedAt: new Date().toISOString(),
-      totalRulesApplied: appliedRulesCount
-    };
-    
-    return testData;
-  }
-
-  getComplianceRules(compliance) {
-    console.log(`📋 [TestCaseGenerator] Loading ${compliance} compliance rules...`);
-    
-    const rules = {
-      'HIPAA': {
-        security: [
-          'HIPAA Security Rule - Access Control',
-          'HIPAA Security Rule - Audit Controls',
-          'HIPAA Security Rule - Integrity Controls',
-          'HIPAA Security Rule - Transmission Security'
-        ],
-        privacy: [
-          'HIPAA Privacy Rule - Minimum Necessary',
-          'HIPAA Privacy Rule - Notice of Privacy Practices',
-          'HIPAA Privacy Rule - Patient Rights'
-        ],
-        auditLog: [
-          'HIPAA Security Rule - Audit Log Requirements',
-          'HIPAA Security Rule - Access Audit Trail'
-        ]
-      },
-      'GDPR': {
-        security: [
-          'GDPR Article 32 - Security of Processing',
-          'GDPR Article 25 - Data Protection by Design'
-        ],
-        privacy: [
-          'GDPR Article 6 - Lawfulness of Processing',
-          'GDPR Article 7 - Consent Requirements'
-        ],
-        auditLog: [
-          'GDPR Article 30 - Records of Processing Activities'
-        ]
-      },
-      'ABDM': {
-        security: [
-          'ABDM - Secure Data Storage',
-          'ABDM - Authentication Requirements'
-        ],
-        privacy: [
-          'ABDM - Patient Consent Framework',
-          'ABDM - Data Minimization'
-        ],
-        auditLog: [
-          'ABDM - Audit Trail Requirements'
-        ]
-      }
-    };
-    
-    const selectedRules = rules[compliance] || rules['HIPAA'];
-    console.log(`✅ [TestCaseGenerator] Loaded ${Object.keys(selectedRules).length} rule categories`);
-    
-    return selectedRules;
+Return ONLY the JSON object. No explanations, no markdown formatting.`;
   }
 }
 
-export default new TestCaseGenerator();
+// Export singleton instance
+const testCaseGenerator = new TestCaseGenerator();
+export default testCaseGenerator;

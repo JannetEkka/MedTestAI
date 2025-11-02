@@ -1,0 +1,196 @@
+// frontend/src/components/RequirementsEditor.js - FIXED VERSION
+import React, { useState, useEffect } from 'react';
+import './RequirementsEditor.css';
+
+const RequirementsEditor = ({ 
+  initialRequirements, 
+  methodology, 
+  complianceFramework,
+  complianceFrameworks,
+  onRegenerate 
+}) => {
+  const [requirements, setRequirements] = useState(initialRequirements || []);
+  const [newRequirement, setNewRequirement] = useState('');
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
+
+  useEffect(() => {
+    if (initialRequirements) {
+      setRequirements(initialRequirements);
+    }
+  }, [initialRequirements]);
+
+  const handleAddRequirement = () => {
+    if (!newRequirement.trim()) return;
+    
+    const req = {
+      text: newRequirement.trim(),
+      type: 'user-added',
+      priority: 'medium',
+      category: 'functional',
+      source: 'manual'
+    };
+    
+    setRequirements([...requirements, req]);
+    setNewRequirement('');
+  };
+
+  const handleDeleteRequirement = (index) => {
+    setRequirements(requirements.filter((_, i) => i !== index));
+  };
+
+  const handleEditRequirement = (index, newText) => {
+    const updated = [...requirements];
+    updated[index] = { ...updated[index], text: newText };
+    setRequirements(updated);
+    setEditingIndex(null);
+  };
+
+  const handleRegenerate = async () => {
+    if (requirements.length === 0) {
+      alert('Please add at least one requirement before regenerating tests.');
+      return;
+    }
+
+    setIsRegenerating(true);
+
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/api/workflow/regenerate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requirements: requirements.map(r => r.text || r),
+            methodology: methodology || 'agile',
+            complianceFramework,
+            complianceFrameworks
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Regeneration failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✓ Regeneration successful');
+        onRegenerate(result.data);
+      } else {
+        throw new Error(result.error || 'Regeneration failed');
+      }
+
+    } catch (error) {
+      console.error('✗ Regeneration error:', error);
+      alert(`Regeneration failed: ${error.message}`);
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  return (
+    <div className="requirements-editor">
+      <div className="editor-header">
+        <h3>Edit Requirements</h3>
+        <p className="editor-subtitle">
+          Modify, add, or remove requirements to regenerate test cases
+        </p>
+      </div>
+
+      <div className="requirements-list">
+        {requirements.map((req, index) => (
+          <div key={index} className="requirement-item">
+            <div className="req-number">{index + 1}</div>
+            
+            {editingIndex === index ? (
+              <input
+                type="text"
+                value={req.text || req}
+                onChange={(e) => {
+                  const updated = [...requirements];
+                  updated[index] = { ...updated[index], text: e.target.value };
+                  setRequirements(updated);
+                }}
+                onBlur={() => setEditingIndex(null)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    setEditingIndex(null);
+                  }
+                }}
+                autoFocus
+                className="req-edit-input"
+              />
+            ) : (
+              <div className="req-content">
+                <p className="req-text">{req.text || req}</p>
+                {req.category && (
+                  <span className="req-badge">{req.category}</span>
+                )}
+              </div>
+            )}
+
+            <div className="req-actions">
+              <button
+                onClick={() => setEditingIndex(index)}
+                className="btn-icon"
+                title="Edit"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDeleteRequirement(index)}
+                className="btn-icon btn-danger"
+                title="Delete"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="add-requirement">
+        <input
+          type="text"
+          value={newRequirement}
+          onChange={(e) => setNewRequirement(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleAddRequirement()}
+          placeholder="Type a new requirement and press Enter..."
+          className="req-input"
+        />
+        <button
+          onClick={handleAddRequirement}
+          className="btn-add"
+          disabled={!newRequirement.trim()}
+        >
+          + Add Requirement
+        </button>
+      </div>
+
+      <div className="editor-actions">
+        <div className="action-info">
+          <p>{requirements.length} requirements</p>
+          <p>Methodology: <strong>{methodology}</strong></p>
+          <p>Compliance: <strong>
+            {complianceFrameworks && complianceFrameworks.length > 1
+              ? complianceFrameworks.join(', ')
+              : complianceFramework}
+          </strong></p>
+        </div>
+        
+        <button
+          onClick={handleRegenerate}
+          disabled={isRegenerating || requirements.length === 0}
+          className="btn-regenerate"
+        >
+          {isRegenerating ? 'Regenerating Tests...' : 'Regenerate Test Cases'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default RequirementsEditor;
