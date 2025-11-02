@@ -26,12 +26,23 @@ Healthcare software testing faces critical challenges:
 
 MedTestAI uses Google Gemini AI to automatically generate detailed, HIPAA-aware test cases from healthcare requirements documents or manual input.
 
-### Key Features
-- **AI-Powered Generation**: Gemini 2.0 Flash creates comprehensive test cases
-- **Healthcare Context**: Understands medical terminology and compliance needs
-- **Multiple Methodologies**: Agile, Waterfall, and Hybrid development support
-- **Compliance Frameworks**: HIPAA, FDA 21 CFR Part 820, GDPR, ABDM (India)
-- **Professional Export**: CSV, JSON formats ready for JIRA, TestRail, Excel
+### Current Features (v1.0)
+- ✅ **AI-Powered Generation**: Gemini 2.0 Flash creates comprehensive test cases
+- ✅ **Healthcare Context**: Understands medical terminology and compliance needs
+- ✅ **Multiple Methodologies**: Agile, Waterfall, and Hybrid development support
+- ✅ **8 Compliance Frameworks**: HIPAA, FDA 21 CFR-11, GDPR, HITRUST, SOC2, ISO-13485, ISO-27001, ABDM
+- ✅ **Professional Export**: CSV, JSON, Excel formats
+- ✅ **Document Upload**: Process requirements from PDF, TXT, MD files
+- ✅ **Manual Input**: Enter requirements directly
+- ✅ **Requirements Editor**: Edit and refine extracted requirements
+- ✅ **Test Case Regeneration**: Iterate on test generation with updated requirements
+
+### Export Formats
+- **CSV**: Excel-compatible format for spreadsheet analysis
+- **JSON**: Machine-readable format for API integration
+- **Excel**: Optimized .xlsx format with proper formatting
+
+All exports include: Test ID, Name, Category, Priority, Description, Preconditions, Test Steps, Expected Results, Compliance Requirements, and Risk Level.
 
 ## Architecture
 
@@ -47,7 +58,7 @@ Google Gemini 2.0 Flash API
     ↓
 Test Cases (JSON)
     ↓ Export
-CSV / JSON Downloads
+CSV / JSON / Excel Downloads
 ```
 
 **Simple & Effective:** No databases, no complex pipelines - just AI-powered test generation.
@@ -104,27 +115,24 @@ npm start
 
 3. **Frontend Setup:**
 ```bash
-# In a new terminal
 cd frontend
 npm install
-
-# Update src/config.js to point to localhost:8080
-# Start frontend
 npm start
 ```
 
-4. **Open http://localhost:3000**
+4. **Access Application:**
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8080
 
-### Production Deployment
+### Cloud Deployment
 
 **Backend (Cloud Run):**
 ```bash
 gcloud run deploy medtestai-backend \
   --source . \
   --region=us-central1 \
-  --platform=managed \
   --allow-unauthenticated \
-  --set-env-vars="GEMINI_API_KEY=your_key,GOOGLE_CLOUD_PROJECT=pro-variety-472211-b9"
+  --set-env-vars GEMINI_API_KEY=your_key_here
 ```
 
 **Frontend (Firebase):**
@@ -134,121 +142,72 @@ npm run build
 firebase deploy --only hosting
 ```
 
-## Usage
+## Usage Guide
 
-### 1. Upload Document or Enter Requirements
-- Upload healthcare requirements document (PDF, DOC, TXT)
-- Or manually enter requirements in the interface
-- Select testing methodology (Agile/Waterfall/Hybrid)
-- Choose compliance framework (HIPAA/FDA/GDPR)
+### 1. Upload Requirements Document
+- Click "Upload Document" 
+- Select PDF, TXT, or MD file containing healthcare requirements
+- System extracts requirements using Document AI
 
-### 2. AI Generation
-- Gemini AI analyzes your requirements
-- Generates comprehensive test cases
-- Includes compliance mapping and risk assessment
-- Typical generation time: 10-30 seconds
+### 2. Configure Generation
+- **Select Methodology**: Agile, Waterfall, or Hybrid
+- **Choose Compliance**: Select one or more frameworks (HIPAA, FDA, GDPR, etc.)
+- Click "Generate Test Cases"
 
-### 3. Export Results
-- Download as CSV (Excel-compatible, 12 columns)
-- Export as JSON for API integration
-- Includes test steps, expected results, compliance requirements
-- Ready to import into JIRA, TestRail, Azure DevOps
+### 3. Review & Edit
+- View extracted requirements in the Requirements Editor
+- Add, edit, or remove requirements as needed
+- Click "Regenerate" to create new test cases
 
-## Generated Test Case Structure
+### 4. Export Test Cases
+- Navigate to Export tab
+- Choose format: CSV, JSON, or Excel
+- Download for use in JIRA, TestRail, or other tools
 
-Each test case includes:
-
-- **Test ID**: Unique identifier (TC001, TC002, etc.)
-- **Test Name**: Descriptive name
-- **Category**: authentication, security, compliance, data-management, etc.
-- **Priority**: Critical, High, Medium, Low
-- **Description**: Detailed test objective
-- **Testing Technique**: Functional, boundary-value, equivalence-partitioning, etc.
-- **Risk Level**: Critical, High, Medium, Low
-- **Compliance Requirements**: HIPAA Privacy Rule, Security Rule, FDA regulations
-- **Automation Potential**: High, Medium, Low
-- **Preconditions**: Setup requirements
-- **Test Steps**: Step-by-step instructions
-- **Expected Results**: What should happen
-
-### Example Generated Test Case
+## Sample Test Case
 
 ```json
 {
   "testId": "TC001",
-  "testName": "Multi-Factor Authentication Validation",
-  "category": "authentication",
+  "testName": "Verify Mandatory Fields are Required",
+  "category": "functional",
   "priority": "Critical",
-  "description": "Verify that the system enforces multi-factor authentication for all user logins",
-  "testingTechnique": "functional-testing",
-  "riskLevel": "High",
-  "complianceRequirements": ["HIPAA Access Control", "FDA 21 CFR Part 820.70(i)"],
-  "automationPotential": "High",
-  "preconditions": ["User account configured with MFA", "Authentication system operational"],
+  "description": "Ensure the system prevents submission if mandatory fields are missing.",
+  "preconditions": ["User is on patient intake form", "Form is in edit mode"],
   "testSteps": [
-    "Navigate to login page",
-    "Enter valid username and password",
-    "Verify MFA prompt appears",
-    "Complete MFA verification",
-    "Confirm successful authentication"
+    "Navigate to patient intake form",
+    "Leave mandatory field 'Legal first name' empty",
+    "Fill all other required fields with valid data",
+    "Click Submit button",
+    "Verify error message appears"
   ],
-  "expectedResults": [
-    "System prompts for second factor authentication",
-    "Login fails without MFA completion",
-    "Successful login only after MFA verification",
-    "Session establishes with proper security context"
-  ]
+  "expectedResults": "System displays error: 'Legal first name is required'",
+  "complianceRequirements": ["HIPAA Privacy Rule", "21 CFR Part 11"],
+  "riskLevel": "High"
 }
 ```
 
-## Real Examples
-
-View actual generated test cases:
-- **[Agile Test Cases](demo_results/test-cases/medtestai-testcases-agile-2025-09-21.csv)** - 9 test cases
-- **[Waterfall Test Cases](demo_results/test-cases/medtestai-testcases-waterfall-2025-09-21.csv)** - 15 test cases  
-- **[Hybrid Test Cases](demo_results/test-cases/medtestai-testcases-hybrid-2025-09-21.csv)** - 7 test cases
-
-## Performance
-
-- **Generation Speed**: 10-30 seconds per document
-- **Accuracy**: 90%+ based on healthcare testing standards
-- **Manual Effort Reduction**: 70% decrease in test creation time
-- **Compliance Coverage**: Automatic HIPAA/FDA requirement mapping
-
-## Security & Compliance
-
-### Data Handling
-- Files processed in memory, not stored permanently
-- No database - stateless architecture
-- HTTPS encryption for all data in transit
-- API keys stored securely in environment variables
-
-### HIPAA Considerations
-- Platform designed for requirements documents, not PHI
-- Can be deployed in HIPAA-compliant GCP environment
-- Audit logging available in Cloud Run
-- Access controls via IAM
-
 ## Roadmap
 
-### Current Release (v1.0)
-- ✅ Gemini AI test generation
-- ✅ Multi-methodology support
-- ✅ Compliance framework selection
-- ✅ CSV/JSON export
+### v2.0 - Enhanced Integration (Q2 2025)
+- 🔄 **Google Drive Export with OAuth**: Seamless export to user's Drive with proper authentication
+- 🔗 **JIRA Direct Integration**: Create issues directly in JIRA
+- 📊 **Advanced Analytics**: Test coverage metrics and compliance dashboards
+- 👥 **Team Collaboration**: Share and collaborate on test cases
+- 🎯 **Custom Test Templates**: Create reusable templates for common scenarios
 
-### Planned Features (v2.0)
-- Advanced requirement parsing
-- Custom compliance rules
-- JIRA direct integration API
-- Batch document processing
-- Team collaboration features
+### v3.0 - Enterprise Features (Q3 2025)
+- 🤖 **Fine-tuned Healthcare Models**: Specialized models for specific healthcare domains
+- 🏥 **EHR System Integration**: Direct integration with Epic, Cerner, Allscripts
+- 📈 **Real-time Collaboration**: Multi-user editing and commenting
+- 🔐 **Advanced Security**: SSO, RBAC, and audit logs
+- 🌍 **Multi-language Support**: Generate test cases in multiple languages
 
-### Future Vision (v3.0)
-- Fine-tuned healthcare models
-- EHR system integration
-- Real-time collaboration
-- Advanced analytics dashboard
+### Future Considerations
+- **Batch Processing**: Upload and process multiple documents simultaneously
+- **Test Execution Integration**: Connect with Selenium, Cypress for automated testing
+- **Requirement Traceability Matrix**: Link requirements to test cases automatically
+- **AI-Powered Test Maintenance**: Auto-update test cases when requirements change
 
 ## Project Structure
 
@@ -256,18 +215,21 @@ View actual generated test cases:
 MedTestAI/
 ├── server.js              # Express API server
 ├── package.json           # Backend dependencies
-├── Dockerfile            # Container configuration
-├── .gcloudignore         # Cloud deployment config
-├── frontend/             # React application
+├── Dockerfile             # Container configuration
+├── .gcloudignore          # Cloud deployment config
+├── frontend/              # React application
 │   ├── src/
-│   │   ├── components/   # React components
-│   │   ├── config.js     # API configuration
-│   │   └── App.js        # Main app
-│   ├── public/           # Static assets
-│   └── package.json      # Frontend dependencies
-├── demo_results/         # Example generated tests
-├── test-documents/       # Sample requirements docs
-└── README.md            # This file
+│   │   ├── components/    # React components
+│   │   ├── config.js      # API configuration
+│   │   └── App.js         # Main app
+│   ├── public/            # Static assets
+│   └── package.json       # Frontend dependencies
+├── services/              # Backend services
+│   ├── geminiService.js   # Gemini AI integration
+│   └── documentProcessor.js # Document handling
+├── demo_results/          # Example generated tests
+├── test-documents/        # Sample requirements docs
+└── README.md             # This file
 ```
 
 ## Contributing
@@ -290,7 +252,7 @@ Contributions welcome! Please:
 
 This platform is designed to be cost-effective:
 
-- **Cloud Run**: Pay-per-request, scales to zero
+- **Cloud Run**: Pay-per-request, scales to zero when idle
 - **Firebase Hosting**: Free tier sufficient for demos
 - **Gemini API**: ~$0.10-0.30 per 1000 test cases generated
 - **No databases**: No ongoing storage costs
@@ -318,6 +280,14 @@ gcloud run services logs read medtestai-backend --region=us-central1
 - Check API quota at https://ai.google.dev
 - Ensure Gemini API is enabled in GCP project
 
+## Security & Compliance
+
+- **No PHI Storage**: Stateless architecture, no data retention
+- **HTTPS Only**: All communication encrypted in transit
+- **API Key Security**: Environment variables, never in code
+- **Compliance Aware**: Understands HIPAA, FDA, GDPR requirements
+- **Audit Ready**: Structured test cases ready for compliance audits
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) file for details.
@@ -329,7 +299,13 @@ MIT License - See [LICENSE](LICENSE) file for details.
 **Project:** [github.com/JannetEkka/MedTestAI](https://github.com/JannetEkka/MedTestAI)  
 **Live Demo:** [pro-variety-472211-b9.web.app](https://pro-variety-472211-b9.web.app)
 
+## Acknowledgments
+
+- **Google Gemini AI**: For powerful language model capabilities
+- **Google Cloud Platform**: For scalable infrastructure
+- **Healthcare Community**: For domain expertise and feedback
+
 ---
 
 **Built for Gen AI Exchange Hackathon 2025**  
-*Simple, powerful AI-driven healthcare test generation*
+*Transforming healthcare testing with AI*

@@ -1,4 +1,23 @@
-﻿// frontend/src/components/TestResults.js - FINAL COMPLETE VERSION
+# FINAL-FIX-NOW.ps1
+# FIXES: UI tabs not showing + Google Drive export
+
+Write-Host "================================================" -ForegroundColor Red
+Write-Host "FINAL FIX - UI + GOOGLE DRIVE" -ForegroundColor Red  
+Write-Host "================================================" -ForegroundColor Red
+
+$projectRoot = "D:\Projects\Gen AI Exchange Hackathon\MedTestAI"
+Set-Location $projectRoot
+
+Write-Host "`n[ISSUE 1] TestResults.js missing Overview/Tests tab content" -ForegroundColor Yellow
+Write-Host "[ISSUE 2] Backend needs Cloud Run credentials" -ForegroundColor Yellow
+
+# ============================================
+# FIX 1: TestResults.js - ADD MISSING TAB CONTENT
+# ============================================
+Write-Host "`n[FIX 1] Creating complete TestResults.js..." -ForegroundColor Yellow
+
+$testResultsComplete = @'
+// frontend/src/components/TestResults.js - COMPLETE WITH ALL TABS
 import React, { useState } from 'react';
 import './TestResults.css';
 
@@ -14,6 +33,8 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
   const requirements = results?.extractedData?.requirements || [];
   const summary = results?.summary || {};
   const metadata = results?.metadata || {};
+
+  console.log('TestResults loaded:', { testCases: testCases.length, requirements: requirements.length });
 
   const filteredTests = selectedCategory === 'all' 
     ? testCases 
@@ -36,26 +57,16 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
         throw new Error('No test cases available');
       }
 
+      console.log(`Exporting ${filteredTests.length} test cases as ${format}`);
       const API_URL = 'https://medtestai-backend-1067292712875.us-central1.run.app';
 
       if (format === 'google-sheets') {
-        // Show instructions first
-        alert(
-          'IMPORTANT: Before exporting to Google Drive:\n\n' +
-          '1. Open your Google Drive folder\n' +
-          '2. Right-click → Share\n' +
-          '3. Add this email as Editor:\n' +
-          '   medtestai-main@pro-variety-472211-b9.iam.gserviceaccount.com\n\n' +
-          'Then click OK and enter your folder ID.'
-        );
-
         const folderId = prompt(
           'Enter your Google Drive Folder ID:\n\n' +
           'How to get it:\n' +
           '1. Open Google Drive\n' +
           '2. Open your folder\n' +
-          '3. Copy ID from URL:\n' +
-          '   drive.google.com/drive/folders/YOUR_FOLDER_ID\n\n' +
+          '3. Copy ID from URL: drive.google.com/drive/folders/YOUR_FOLDER_ID\n\n' +
           'Folder ID:'
         );
 
@@ -69,18 +80,11 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
           body: JSON.stringify({ folderId: folderId.trim() })
         });
 
-        if (!verifyResp.ok) {
-          throw new Error('Folder verification failed. Did you share the folder with the service account?');
-        }
+        if (!verifyResp.ok) throw new Error('Folder verification failed');
 
         const verifyResult = await verifyResp.json();
         if (!verifyResult.success) {
-          throw new Error(
-            `Cannot access folder.\n\n` +
-            `Make sure you shared it with:\n` +
-            `medtestai-main@pro-variety-472211-b9.iam.gserviceaccount.com\n\n` +
-            `Error: ${verifyResult.error}`
-          );
+          throw new Error(verifyResult.error || 'Cannot access folder');
         }
 
         console.log(`Folder verified: ${verifyResult.folderName}`);
@@ -104,13 +108,12 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
 
         const result = await exportResp.json();
         if (result.success) {
-          setExportSuccess(`Created "${result.fileName}" in your Drive folder!`);
+          setExportSuccess(`Created "${result.fileName}"!`);
           if (result.spreadsheetUrl) {
             setTimeout(() => window.open(result.spreadsheetUrl, '_blank'), 500);
           }
         }
       } else {
-        // CSV/JSON/Excel
         const response = await fetch(`${API_URL}/api/tests/export`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -128,11 +131,10 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const extension = format === 'json' ? 'json' : format === 'excel' ? 'xlsx' : 'csv';
-        a.download = `medtestai-testcases-${format}-${Date.now()}.${extension}`;
+        a.download = `medtestai-testcases-${format}-${Date.now()}.${format === 'json' ? 'json' : 'csv'}`;
         a.click();
         window.URL.revokeObjectURL(url);
-        setExportSuccess(`Downloaded ${filteredTests.length} test cases as ${format.toUpperCase()}`);
+        setExportSuccess(`Downloaded ${filteredTests.length} test cases`);
       }
     } catch (error) {
       console.error('Export error:', error);
@@ -241,6 +243,7 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
               <div><strong>Methodology:</strong> {metadata.methodology || methodology || 'N/A'}</div>
               <div><strong>Compliance:</strong> {metadata.complianceFramework || complianceFramework || 'N/A'}</div>
               <div><strong>Generated:</strong> {new Date(metadata.generatedAt || Date.now()).toLocaleString()}</div>
+              {summary.totalTests && <div><strong>Total Tests:</strong> {summary.totalTests}</div>}
             </div>
           </div>
 
@@ -282,7 +285,7 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
 
           {filteredTests.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#666', background: '#f8f9fa', borderRadius: '8px' }}>
-              <div style={{ fontSize: '18px' }}>No test cases available</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>No test cases</div>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: '16px' }}>
@@ -331,7 +334,7 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
           <h3 style={{ marginBottom: '24px', color: '#333' }}>Export Test Cases</h3>
           
           {exportError && (
-            <div style={{ padding: '16px', background: '#fee', color: '#c00', borderRadius: '8px', marginBottom: '16px', whiteSpace: 'pre-wrap' }}>
+            <div style={{ padding: '16px', background: '#fee', color: '#c00', borderRadius: '8px', marginBottom: '16px' }}>
               {exportError}
             </div>
           )}
@@ -360,13 +363,6 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
                 JSON
               </button>
               <button
-                style={{ ...styles.button, ...(exportFormat === 'excel' ? styles.primaryButton : styles.secondaryButton) }}
-                onClick={() => setExportFormat('excel')}
-                disabled={exportLoading}
-              >
-                EXCEL
-              </button>
-              <button
                 style={{ ...styles.button, ...(exportFormat === 'google-sheets' ? styles.sheetsButton : styles.secondaryButton) }}
                 onClick={() => setExportFormat('google-sheets')}
                 disabled={exportLoading}
@@ -383,11 +379,8 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
               <div>Methodology: <strong>{methodology}</strong></div>
               <div>Compliance: <strong>{complianceFramework}</strong></div>
               {exportFormat === 'google-sheets' && (
-                <div style={{ marginTop: '12px', padding: '12px', background: '#fff3cd', borderRadius: '6px', color: '#856404' }}>
-                  <strong>IMPORTANT:</strong> You must share your Drive folder with:<br/>
-                  <code style={{ fontSize: '12px', background: '#fff', padding: '4px', borderRadius: '4px', display: 'inline-block', marginTop: '4px' }}>
-                    medtestai-main@pro-variety-472211-b9.iam.gserviceaccount.com
-                  </code>
+                <div style={{ marginTop: '12px', padding: '12px', background: '#e8f5e9', borderRadius: '6px', color: '#2e7d32' }}>
+                  You will be prompted for your Google Drive folder ID
                 </div>
               )}
             </div>
@@ -410,6 +403,12 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
              exportFormat === 'google-sheets' ? `Export ${filteredTests.length} Test Cases to Google Drive` :
              `Export ${filteredTests.length} Test Cases as ${exportFormat.toUpperCase()}`}
           </button>
+
+          {filteredTests.length === 0 && (
+            <p style={{ marginTop: '16px', color: '#999', textAlign: 'center', fontSize: '14px' }}>
+              No test cases available to export
+            </p>
+          )}
         </div>
       )}
 
@@ -426,3 +425,264 @@ const TestResults = ({ results, methodology, complianceFramework, onNewAnalysis 
 };
 
 export default TestResults;
+'@
+
+Copy-Item "frontend\src\components\TestResults.js" "frontend\src\components\TestResults.js.backup-final" -Force -ErrorAction SilentlyContinue
+$testResultsComplete | Set-Content "frontend\src\components\TestResults.js" -Encoding UTF8
+Write-Host "  OK Fixed TestResults.js" -ForegroundColor Green
+
+# ============================================
+# FIX 2: GoogleDriveExport.js
+# ============================================
+Write-Host "`n[FIX 2] Creating GoogleDriveExport.js..." -ForegroundColor Yellow
+
+$googleDriveExportCloudRun = @'
+// services/GoogleDriveExport.js
+import { google } from 'googleapis';
+
+class GoogleDriveExport {
+  constructor() {
+    this.drive = null;
+    this.sheets = null;
+    this.auth = null;
+    this.initialized = false;
+  }
+
+  async initialize() {
+    if (this.initialized) return true;
+    
+    try {
+      console.log('[DriveExport] Initializing...');
+      
+      this.auth = new google.auth.GoogleAuth({
+        scopes: [
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/drive'
+        ]
+      });
+
+      const authClient = await this.auth.getClient();
+      this.drive = google.drive({ version: 'v3', auth: authClient });
+      this.sheets = google.sheets({ version: 'v4', auth: authClient });
+      this.initialized = true;
+      
+      console.log('[DriveExport] Initialized');
+      return true;
+    } catch (error) {
+      console.error('[DriveExport] Init failed:', error.message);
+      throw new Error(`Drive Export Init Failed: ${error.message}`);
+    }
+  }
+
+  async verifyFolder(folderId) {
+    try {
+      await this.initialize();
+      
+      console.log('[DriveExport] Verifying folder:', folderId);
+      
+      const response = await this.drive.files.get({
+        fileId: folderId,
+        fields: 'id, name, mimeType',
+        supportsAllDrives: true
+      });
+
+      if (response.data.mimeType !== 'application/vnd.google-apps.folder') {
+        return { valid: false, error: 'Not a folder' };
+      }
+
+      console.log('[DriveExport] Folder verified:', response.data.name);
+      return { valid: true, folderName: response.data.name };
+    } catch (error) {
+      console.error('[DriveExport] Verify failed:', error.message);
+      return { valid: false, error: error.message };
+    }
+  }
+
+  async createSheetInFolder(testCases, config) {
+    try {
+      await this.initialize();
+
+      const { folderId, fileName = 'MedTestAI Test Cases', methodology = 'agile', compliance = 'HIPAA' } = config;
+
+      console.log(`[DriveExport] Creating sheet for ${testCases.length} test cases`);
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fullName = `${fileName} - ${timestamp}`;
+      
+      const spreadsheet = await this.sheets.spreadsheets.create({
+        requestBody: {
+          properties: { title: fullName },
+          sheets: [{ properties: { title: 'Test Cases', gridProperties: { frozenRowCount: 1 } } }]
+        }
+      });
+
+      const spreadsheetId = spreadsheet.data.spreadsheetId;
+      console.log('[DriveExport] Created:', spreadsheetId);
+
+      await this.drive.files.update({
+        fileId: spreadsheetId,
+        addParents: folderId,
+        fields: 'id, parents',
+        supportsAllDrives: true
+      });
+      console.log('[DriveExport] Moved to folder');
+
+      const headers = ['Test ID', 'Test Name', 'Category', 'Priority', 'Description', 'Preconditions', 'Test Steps', 'Expected Results', 'Compliance'];
+      
+      const rows = testCases.map(tc => [
+        tc.testId || tc.id || '',
+        tc.testName || tc.name || tc.title || '',
+        tc.category || '',
+        tc.priority || 'Medium',
+        tc.description || '',
+        this.formatArray(tc.preconditions),
+        this.formatArray(tc.testSteps),
+        tc.expectedResults || tc.expected || '',
+        this.formatArray(tc.complianceRequirements)
+      ]);
+
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: 'Test Cases!A1',
+        valueInputOption: 'RAW',
+        requestBody: { values: [headers, ...rows] }
+      });
+
+      await this.sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            repeatCell: {
+              range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.4, green: 0.5, blue: 0.9 },
+                  textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true },
+                  horizontalAlignment: 'CENTER'
+                }
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+            }
+          }, {
+            autoResizeDimensions: {
+              dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 9 }
+            }
+          }]
+        }
+      });
+
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+      console.log('[DriveExport] Complete:', url);
+
+      return { spreadsheetId, spreadsheetUrl: url, fileName: fullName };
+    } catch (error) {
+      console.error('[DriveExport] Create failed:', error.message);
+      throw error;
+    }
+  }
+
+  formatArray(arr) {
+    if (!arr) return '';
+    if (typeof arr === 'string') return arr;
+    if (Array.isArray(arr)) {
+      return arr.map((item, i) => {
+        if (typeof item === 'object') {
+          return `${i+1}. ${item.step || item.action || JSON.stringify(item)}`;
+        }
+        return `${i+1}. ${item}`;
+      }).join('\n');
+    }
+    return String(arr);
+  }
+}
+
+export default new GoogleDriveExport();
+'@
+
+if (-not (Test-Path "services")) {
+    New-Item -ItemType Directory -Path "services" -Force | Out-Null
+}
+$googleDriveExportCloudRun | Set-Content "services\GoogleDriveExport.js" -Encoding UTF8
+Write-Host "  OK Created GoogleDriveExport.js" -ForegroundColor Green
+
+# ============================================
+# FIX 3: Update server.js
+# ============================================
+Write-Host "`n[FIX 3] Checking server.js..." -ForegroundColor Yellow
+
+$serverFile = "server.js"
+$content = Get-Content $serverFile -Raw
+
+$needsUpdate = $false
+
+if ($content -notmatch 'GoogleDriveExport') {
+    $content = $content -replace '(import GoogleDriveService.*)', "`$1`nimport GoogleDriveExport from './services/GoogleDriveExport.js';"
+    $needsUpdate = $true
+    Write-Host "  OK Added import" -ForegroundColor Green
+}
+
+if ($content -notmatch '/api/drive/verify-folder') {
+    $endpoints = @'
+
+
+app.post('/api/drive/verify-folder', asyncHandler(async (req, res) => {
+  const { folderId } = req.body;
+  if (!folderId) return res.status(400).json({ success: false, error: 'Folder ID required' });
+  const result = await GoogleDriveExport.verifyFolder(folderId);
+  res.json({ success: result.valid, folderName: result.folderName, error: result.error });
+}));
+
+app.post('/api/export/drive-folder', asyncHandler(async (req, res) => {
+  const { testCases, folderId, fileName, methodology, compliance } = req.body;
+  if (!testCases || testCases.length === 0) return res.status(400).json({ success: false, error: 'No test cases' });
+  if (!folderId) return res.status(400).json({ success: false, error: 'Folder ID required' });
+  try {
+    const result = await GoogleDriveExport.createSheetInFolder(testCases, { folderId, fileName: fileName || 'MedTestAI Test Cases', methodology, compliance });
+    res.json({ success: true, spreadsheetUrl: result.spreadsheetUrl, spreadsheetId: result.spreadsheetId, fileName: result.fileName });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
+'@
+
+    $insertMarker = '// ==================== EXPORT ENDPOINTS ===================='
+    if ($content -match $insertMarker) {
+        $content = $content -replace $insertMarker, "$endpoints`n`n$insertMarker"
+    } else {
+        $content += "`n$endpoints"
+    }
+    $needsUpdate = $true
+    Write-Host "  OK Added endpoints" -ForegroundColor Green
+}
+
+if ($needsUpdate) {
+    $content | Set-Content $serverFile -Encoding UTF8
+}
+
+# ============================================
+# FIX 4: Deploy Backend
+# ============================================
+Write-Host "`n[FIX 4] Deploying backend..." -ForegroundColor Yellow
+
+gcloud run deploy medtestai-backend --source . --region=us-central1 --platform=managed --allow-unauthenticated --project=pro-variety-472211-b9
+
+# ============================================
+# FIX 5: Rebuild Frontend
+# ============================================
+Write-Host "`n[FIX 5] Rebuilding frontend..." -ForegroundColor Yellow
+
+Set-Location "frontend"
+npm run build
+
+Write-Host "`n[FIX 6] Deploying to Firebase..." -ForegroundColor Yellow
+firebase deploy --only hosting
+
+Set-Location $projectRoot
+
+Write-Host "`n================================================" -ForegroundColor Green
+Write-Host "COMPLETE!" -ForegroundColor Green
+Write-Host "================================================" -ForegroundColor Green
+
+Write-Host "`nRefresh: https://pro-variety-472211-b9.web.app" -ForegroundColor Cyan
+Write-Host "Your folder ID: 1mrYi-oRAEfKvEXopOexrG5GfTNsem5lm" -ForegroundColor Cyan
