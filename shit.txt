@@ -1,4 +1,0 @@
-we need to check other files too. they also need to be changed to vertex ai and adc behaviors.
-
-all files are updated in the project knowledge. if you need any imports check project_structure.txt. please provide updated files.
-

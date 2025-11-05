@@ -133,9 +133,23 @@ const ExportOptions = ({ testCases = [], metadata = {} }) => {
           console.log(`📄 [EXPORT] Data length: ${result.data.length} characters`);
           
           // Create and trigger download
-          const blob = new Blob([result.data], { 
-            type: result.mimeType || 'text/plain'
-          });
+          let blob;
+          if (result.encoding === 'base64') {
+            // Decode base64 for Excel files
+            const binaryString = atob(result.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            blob = new Blob([bytes], { 
+              type: result.mimeType || 'application/octet-stream' 
+            });
+          } else {
+            // Regular string data for CSV/JSON
+            blob = new Blob([result.data], { 
+              type: result.mimeType || 'text/plain'
+            });
+          }
           
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement('a');

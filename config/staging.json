@@ -1,0 +1,18 @@
+{
+  "server": {
+    "port": 3000,
+    "host": "localhost"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "medtestai_dev"
+  },
+  "logging": {
+    "level": "debug"
+  },
+  "security": {
+    "enableAuditLogging": true,
+    "enablePHISanitization": true
+  }
+}

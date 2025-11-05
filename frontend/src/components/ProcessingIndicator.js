@@ -11,42 +11,42 @@ const ProcessingIndicator = ({ stage, methodology, complianceFramework }) => {
       name: 'Document Upload',
       description: 'Securely uploading to Google Cloud Storage with HIPAA compliance',
       icon: '☁️',
-      estimatedTime: '2s'
+      estimatedTime: '5-10s'
     },
     {
       id: 'document_ai',
       name: 'Document AI Processing',
       description: 'Extracting text and identifying medical entities with Document AI',
       icon: '🔍',
-      estimatedTime: '5-10s'
+      estimatedTime: '90-120s'
     },
     {
       id: 'vertex_ai',
       name: 'Healthcare Analysis',
       description: 'Analyzing requirements with Vertex AI healthcare models',
       icon: '⚕️',
-      estimatedTime: '3-5s'
+      estimatedTime: '15-20s'
     },
     {
       id: 'gemini',
       name: 'Test Generation',
       description: 'Generating intelligent test cases with Gemini AI',
       icon: '🧠',
-      estimatedTime: '5-8s'
+      estimatedTime: '30-45s'
     },
     {
       id: 'compliance',
       name: 'Compliance Validation',
       description: `Applying ${complianceFramework} compliance rules and validation`,
       icon: '🛡️',
-      estimatedTime: '2-3s'
+      estimatedTime: '5-10s'
     },
     {
       id: 'finalization',
       name: 'Test Suite Assembly',
       description: `Organizing tests for ${methodology} methodology`,
       icon: '📋',
-      estimatedTime: '1-2s'
+      estimatedTime: '3-5s'
     }
   ];
 

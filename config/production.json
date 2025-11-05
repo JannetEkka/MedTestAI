@@ -1,0 +1,17 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0"
+  },
+  "database": {
+    "connectionString": "${DATABASE_URL}"
+  },
+  "logging": {
+    "level": "info"
+  },
+  "security": {
+    "enableAuditLogging": true,
+    "enablePHISanitization": true,
+    "requireMFA": true
+  }
+}
